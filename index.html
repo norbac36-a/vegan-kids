@@ -495,10 +495,16 @@
   async function pushSyncedSongs(){
     if(!artifactCap || syncWriteBlocked) return;
     try{
+      // "keepalive" es importante aquí: si este guardado se dispara justo
+      // cuando el usuario cambia de canción, de pestaña o sale de la app
+      // (ver el aviso de "visibilitychange" más abajo), sin esto el propio
+      // navegador puede cortar la petición a medias antes de que llegue a
+      // guardarse de verdad, y el cambio se perdería en silencio.
       await withTimeout(fetch(artifactCap, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(songs)
+        body: JSON.stringify(songs),
+        keepalive: true
       }), 8000);
     }catch(err){
       // Sin conexión, límite de peticiones u otro fallo pasajero: los
