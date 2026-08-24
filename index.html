@@ -172,6 +172,16 @@
   #confirm-message{margin:0 0 16px;font-size:15px;line-height:1.4;white-space:pre-line;}
   #confirm-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 
+  /* Foto de acordes: overlay de "leyendo la foto..." mientras se hace OCR */
+  #ocr-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:220;
+    display:flex;align-items:center;justify-content:center;padding:20px;}
+  #ocr-panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;
+    padding:22px 26px;text-align:center;max-width:300px;}
+  #ocr-panel .spin{width:30px;height:30px;margin:0 auto 12px;border-radius:50%;
+    border:3px solid var(--border);border-top-color:var(--accent);animation:ocr-spin 0.8s linear infinite;}
+  @keyframes ocr-spin{to{transform:rotate(360deg);}}
+  #ocr-panel p{margin:0;font-size:13px;color:var(--text-dim);}
+
   @media (max-width:520px){
     .row-3{grid-template-columns:1fr 1fr;}
     #stage-title{font-size:20px;}
@@ -291,9 +301,11 @@
       </div>
       <div class="icon-row">
         <button class="icon-btn" id="btn-edit-current" title="Editar">✎</button>
+        <button class="icon-btn" id="btn-chord-photo" title="Foto de acordes">📷</button>
         <button class="icon-btn" id="btn-lock" title="Mantener pantalla encendida">🔓</button>
         <button class="icon-btn" id="btn-close-stage" title="Cerrar">✕</button>
       </div>
+      <input type="file" id="chord-photo-input" accept="image/*" class="hidden">
     </div>
 
     <div class="nav-row">
@@ -349,6 +361,18 @@
   </div>
 </div>
 
+<!-- ============ LECTURA DE FOTO DE ACORDES (OCR mientras se procesa) ============ -->
+<div id="ocr-overlay" class="hidden">
+  <div id="ocr-panel">
+    <div class="spin"></div>
+    <p>Leyendo la foto…</p>
+  </div>
+</div>
+
+<!-- Lector de OCR gratuito para la foto de acordes (se ejecuta en el propio
+     dispositivo, sin cuenta ni coste). Si no hay conexión al cargar la
+     página, el botón de la foto avisa de que no está disponible. -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 (function(){
   "use strict";
@@ -492,19 +516,24 @@
     pushTimer = setTimeout(pushSyncedSongs, 600);
   }
 
-  async function pushSyncedSongs(){
+  async function pushSyncedSongs(opts){
     if(!artifactCap || syncWriteBlocked) return;
     try{
-      // "keepalive" es importante aquí: si este guardado se dispara justo
-      // cuando el usuario cambia de canción, de pestaña o sale de la app
-      // (ver el aviso de "visibilitychange" más abajo), sin esto el propio
-      // navegador puede cortar la petición a medias antes de que llegue a
-      // guardarse de verdad, y el cambio se perdería en silencio.
+      const body = JSON.stringify(songs);
+      // "keepalive" evita que el navegador corte la petición a medias si se
+      // dispara justo cuando el usuario sale de la app (ver el aviso de
+      // "visibilitychange" más abajo). Solo se pide ahí, y solo si el
+      // guardado es pequeño: los navegadores limitan las peticiones
+      // "keepalive" a 64KB en total, y con fotos de acordes guardadas el
+      // conjunto de canciones puede superarlo con facilidad — en ese caso
+      // usar "keepalive" haría fallar la petición entera, así que se manda
+      // como una petición normal (mejor esfuerzo, sin esa garantía extra).
+      const useKeepalive = !!(opts && opts.keepalive) && body.length < 60000;
       await withTimeout(fetch(artifactCap, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(songs),
-        keepalive: true
+        body,
+        keepalive: useKeepalive
       }), 8000);
     }catch(err){
       // Sin conexión, límite de peticiones u otro fallo pasajero: los
@@ -575,7 +604,7 @@
     if(document.visibilityState === 'hidden' && pushTimer){
       clearTimeout(pushTimer);
       pushTimer = null;
-      pushSyncedSongs();
+      pushSyncedSongs({ keepalive: true });
     }
   });
 
@@ -1024,6 +1053,9 @@
   const scrollSpeed = document.getElementById('scroll-speed');
   const btnLock = document.getElementById('btn-lock');
   const wakelockNote = document.getElementById('wakelock-note');
+  const btnChordPhoto = document.getElementById('btn-chord-photo');
+  const chordPhotoInput = document.getElementById('chord-photo-input');
+  const ocrOverlay = document.getElementById('ocr-overlay');
 
   let currentIndex = 0;
   let currentTranspose = 0;
@@ -1069,10 +1101,14 @@
     document.getElementById('btn-next-song').disabled = currentIndex === songs.length - 1;
 
     currentTranspose = song.transpose || 0;
-    // updateTransposeLabel() ya pinta la letra con el transporte guardado de
-    // esta canción (ver más abajo) — no hay que volver a pintarla aquí sin
-    // transporte, o se perdería visualmente el transporte guardado aunque el
-    // número de arriba siga mostrándolo bien.
+    // El tamaño de letra y la velocidad de autoscroll también se recuerdan
+    // por canción (cada una puede necesitar un tamaño/velocidad distinto).
+    currentScale = song.fontScale || 1;
+    applyScale();
+    scrollSpeed.value = song.scrollSpeed || 1;
+    // updateTransposeLabel() ya pinta la letra (con el transporte guardado)
+    // — no hay que volver a pintarla aquí, o se perdería visualmente el
+    // transporte guardado aunque el número de arriba siga mostrándolo bien.
     updateTransposeLabel();
 
     obsText.value = song.observations || '';
@@ -1119,6 +1155,78 @@
   });
   document.getElementById('btn-go-stage').addEventListener('click', () => openStage(0));
 
+  /* ---- Foto de acordes (lectura automática / OCR) ----
+     No se guarda la foto: se "lee" con Tesseract.js (OCR gratuito, en el
+     propio dispositivo) y el texto reconocido se convierte a acordes entre
+     corchetes [Así] igual que en el resto de la app. Como la lectura
+     automática gratuita puede equivocarse (sobre todo con letra a mano),
+     el resultado NO se guarda directo: se abre el editor de la canción con
+     el borrador ya puesto, para que Albert lo revise y corrija antes de
+     pulsar "Guardar". */
+
+  // Palabras sueltas que "parecen" un acorde: nota (A-G), alteración
+  // opcional (#/b), sufijo habitual opcional (m, 7, maj7, sus4, dim...) y
+  // bajo opcional tras una barra (p.ej. "D/F#").
+  const CHORD_TOKEN_RE = /^[A-G](#|b)?(maj7|maj9|maj|min7|min9|min|dim7|dim|aug|sus2|sus4|sus|add9|add11|add2|add4|m7b5|m7|m9|m6|m11|m13|m|6\/9|6|7sus4|7sus2|7b9|7#9|7|9|11|13)?(\/[A-G](#|b)?)?$/i;
+
+  function ocrLineToChordProLite(line){
+    return line.split(/(\s+)/).map((tok) => {
+      if(!tok.trim()) return tok; // conserva los espacios tal cual
+      return CHORD_TOKEN_RE.test(tok) ? ('[' + tok + ']') : tok;
+    }).join('');
+  }
+
+  function ocrTextToChordProLite(rawText){
+    return (rawText || '')
+      .replace(/\r/g, '')
+      .split('\n')
+      .map((l) => l.trim())
+      .map(ocrLineToChordProLite)
+      .join('\n')
+      .trim();
+  }
+
+  btnChordPhoto.addEventListener('click', () => {
+    chordPhotoInput.click();
+  });
+
+  chordPhotoInput.addEventListener('change', async () => {
+    const file = chordPhotoInput.files && chordPhotoInput.files[0];
+    chordPhotoInput.value = ''; // para poder elegir la misma foto otra vez si hace falta
+    if(!file) return;
+    if(typeof Tesseract === 'undefined'){
+      showToast('No se ha podido cargar el lector de fotos (revisa la conexión).');
+      return;
+    }
+    ocrOverlay.classList.remove('hidden');
+    try{
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error);
+        reader.onload = () => resolve(reader.result);
+        reader.readAsDataURL(file);
+      });
+      const result = await Tesseract.recognize(dataUrl, 'eng');
+      const rawText = (result && result.data && result.data.text) || '';
+      if(!rawText.trim()){
+        showToast('No se ha reconocido texto en la foto. Prueba con más luz y más de cerca.');
+        return;
+      }
+      const draft = ocrTextToChordProLite(rawText);
+      const song = songs[currentIndex];
+      const baseContent = song && song.content ? song.content.replace(/\s+$/, '') : '';
+      openEditor(currentIndex);
+      fContent.value = (baseContent ? baseContent + '\n\n' : '')
+        + '## Acordes de la foto (revisa y corrige)\n' + draft;
+      updatePreview();
+      showToast('Foto leída: revisa los acordes antes de guardar.');
+    }catch(e){
+      showToast('No se ha podido leer la foto.');
+    }finally{
+      ocrOverlay.classList.add('hidden');
+    }
+  });
+
   // Observaciones: autosave al perder el foco
   obsText.addEventListener('input', autoResizeObs);
   obsText.addEventListener('blur', () => {
@@ -1147,13 +1255,22 @@
     lyricsContent.style.setProperty('--scale', currentScale);
     fontPct.textContent = Math.round(currentScale * 100) + '%';
   }
+  // Se guarda por canción (cada una puede necesitar un tamaño distinto).
+  function saveFontScale(){
+    const song = songs[currentIndex];
+    if(!song) return;
+    song.fontScale = currentScale;
+    saveSongs();
+  }
   document.getElementById('font-minus').addEventListener('click', () => {
     currentScale = Math.max(0.6, +(currentScale - 0.1).toFixed(2));
     applyScale();
+    saveFontScale();
   });
   document.getElementById('font-plus').addEventListener('click', () => {
     currentScale = Math.min(2, +(currentScale + 0.1).toFixed(2));
     applyScale();
+    saveFontScale();
   });
   applyScale();
 
@@ -1220,21 +1337,11 @@
     updatePlayButton();
   }
 
-  // Al llegar al final de la letra: paramos y, si no es la última canción,
-  // pasamos automáticamente a la siguiente (sin arrancar su scroll, para
-  // que la banda controle cuándo empieza el siguiente tema).
+  // Al llegar al final de la letra: simplemente paramos. Antes pasaba sola
+  // a la siguiente canción, pero a petición de Albert ya no lo hace — la
+  // banda decide cuándo cambiar de tema.
   function handleAutoscrollComplete(){
     stopAutoscroll();
-    const idxAtCompletion = currentIndex;
-    if(idxAtCompletion < songs.length - 1){
-      showToast('Siguiente canción…', 1400);
-      setTimeout(() => {
-        if(currentIndex === idxAtCompletion && currentIndex < songs.length - 1){
-          currentIndex++;
-          renderStageSong();
-        }
-      }, 1200);
-    }
   }
 
   function togglePlay(){
@@ -1245,11 +1352,46 @@
     playBtn.textContent = autoscrolling ? '❚❚' : '▶';
   }
   playBtn.addEventListener('click', togglePlay);
+  // Se guarda por canción (cada una puede necesitar una velocidad distinta).
+  function saveScrollSpeed(){
+    const song = songs[currentIndex];
+    if(!song) return;
+    song.scrollSpeed = parseFloat(scrollSpeed.value) || 1;
+    saveSongs();
+  }
   scrollSpeed.addEventListener('input', () => {
     if(autoscrolling){ stopAutoscroll(); startAutoscroll(); }
   });
+  // "change" (al soltar, no en cada tick del arrastre) para no disparar un
+  // guardado por cada pequeño movimiento del control.
+  scrollSpeed.addEventListener('change', saveScrollSpeed);
   lyricsScroll.addEventListener('touchstart', () => { if(autoscrolling) stopAutoscroll(); }, {passive:true});
   lyricsScroll.addEventListener('wheel', () => { if(autoscrolling) stopAutoscroll(); }, {passive:true});
+
+  /* ---- Deslizar para cambiar de canción (además de las flechas) ---- */
+  let swipeStartX = null, swipeStartY = null, swipeTracking = false;
+  const SWIPE_MIN_PX = 70;
+  lyricsScroll.addEventListener('touchstart', (e) => {
+    if(e.touches.length !== 1) return;
+    swipeStartX = e.touches[0].clientX;
+    swipeStartY = e.touches[0].clientY;
+    swipeTracking = true;
+  }, {passive:true});
+  lyricsScroll.addEventListener('touchend', (e) => {
+    if(!swipeTracking) return;
+    swipeTracking = false;
+    const touch = e.changedTouches && e.changedTouches[0];
+    if(!touch || swipeStartX === null) return;
+    const dx = touch.clientX - swipeStartX;
+    const dy = touch.clientY - swipeStartY;
+    // Solo cuenta como "cambiar de canción" si el gesto es claramente más
+    // horizontal que vertical (para no interferir con el scroll normal de
+    // la letra hacia arriba/abajo).
+    if(Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.5){
+      const btn = dx < 0 ? document.getElementById('btn-next-song') : document.getElementById('btn-prev-song');
+      if(!btn.disabled) btn.click();
+    }
+  }, {passive:true});
 
   /* ---- Pantalla siempre encendida (Wake Lock) ---- */
   async function requestWakeLock(){
