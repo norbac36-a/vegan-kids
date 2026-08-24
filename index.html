@@ -1069,13 +1069,15 @@
     document.getElementById('btn-next-song').disabled = currentIndex === songs.length - 1;
 
     currentTranspose = song.transpose || 0;
+    // updateTransposeLabel() ya pinta la letra con el transporte guardado de
+    // esta canción (ver más abajo) — no hay que volver a pintarla aquí sin
+    // transporte, o se perdería visualmente el transporte guardado aunque el
+    // número de arriba siga mostrándolo bien.
     updateTransposeLabel();
 
     obsText.value = song.observations || '';
     autoResizeObs();
 
-    const parsed = parseContent(song.content || '');
-    lyricsContent.innerHTML = renderParsedContent(parsed, 0, false);
     lyricsScroll.scrollTop = 0;
 
     updatePlayButton();
