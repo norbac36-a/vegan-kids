@@ -1424,8 +1424,35 @@
   // "change" (al soltar, no en cada tick del arrastre) para no disparar un
   // guardado por cada pequeño movimiento del control.
   scrollSpeed.addEventListener('change', saveScrollSpeed);
-  lyricsScroll.addEventListener('touchstart', () => { if(autoscrolling) stopAutoscroll(); }, {passive:true});
-  lyricsScroll.addEventListener('wheel', () => { if(autoscrolling) stopAutoscroll(); }, {passive:true});
+
+  // Si tocas/arrastras la letra para ver texto de más arriba o más abajo
+  // mientras el autoscroll está en marcha, se pausa durante ese gesto y, al
+  // soltar, retoma solo el autoscroll (sin tener que volver a darle a play).
+  let resumeAutoscrollOnRelease = false;
+  let wheelResumeTimer = null;
+
+  lyricsScroll.addEventListener('touchstart', () => {
+    if(autoscrolling){
+      resumeAutoscrollOnRelease = true;
+      stopAutoscroll();
+    }
+  }, {passive:true});
+
+  lyricsScroll.addEventListener('wheel', () => {
+    if(autoscrolling){
+      resumeAutoscrollOnRelease = true;
+      stopAutoscroll();
+    }
+    if(resumeAutoscrollOnRelease){
+      // La rueda del ratón no tiene un "soltar" claro como el dedo: retomamos
+      // un momento después de la última vez que se ha movido la rueda.
+      if(wheelResumeTimer) clearTimeout(wheelResumeTimer);
+      wheelResumeTimer = setTimeout(() => {
+        resumeAutoscrollOnRelease = false;
+        startAutoscroll();
+      }, 500);
+    }
+  }, {passive:true});
 
   /* ---- Deslizar para cambiar de canción (además de las flechas) ---- */
   let swipeStartX = null, swipeStartY = null, swipeTracking = false;
@@ -1437,18 +1464,28 @@
     swipeTracking = true;
   }, {passive:true});
   lyricsScroll.addEventListener('touchend', (e) => {
-    if(!swipeTracking) return;
-    swipeTracking = false;
     const touch = e.changedTouches && e.changedTouches[0];
-    if(!touch || swipeStartX === null) return;
-    const dx = touch.clientX - swipeStartX;
-    const dy = touch.clientY - swipeStartY;
-    // Solo cuenta como "cambiar de canción" si el gesto es claramente más
-    // horizontal que vertical (para no interferir con el scroll normal de
-    // la letra hacia arriba/abajo).
-    if(Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.5){
-      const btn = dx < 0 ? document.getElementById('btn-next-song') : document.getElementById('btn-prev-song');
-      if(!btn.disabled) btn.click();
+    let isSongSwipe = false;
+    if(swipeTracking && touch && swipeStartX !== null){
+      const dx = touch.clientX - swipeStartX;
+      const dy = touch.clientY - swipeStartY;
+      // Solo cuenta como "cambiar de canción" si el gesto es claramente más
+      // horizontal que vertical (para no interferir con el scroll normal de
+      // la letra hacia arriba/abajo).
+      if(Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy) * 1.5){
+        isSongSwipe = true;
+        const btn = dx < 0 ? document.getElementById('btn-next-song') : document.getElementById('btn-prev-song');
+        if(!btn.disabled) btn.click();
+      }
+    }
+    swipeTracking = false;
+    // Al soltar el dedo: si veníamos de pausar el autoscroll para dejar
+    // mover la letra a mano, lo retomamos — salvo que el gesto haya sido
+    // para cambiar de canción (la canción nueva siempre arranca parada,
+    // a la espera de darle a play).
+    if(resumeAutoscrollOnRelease){
+      resumeAutoscrollOnRelease = false;
+      if(!isSongSwipe) startAutoscroll();
     }
   }, {passive:true});
 
