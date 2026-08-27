@@ -172,6 +172,18 @@
   #confirm-message{margin:0 0 16px;font-size:15px;line-height:1.4;white-space:pre-line;}
   #confirm-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
 
+  /* Ajustes de Ableton (opcional): mismo estilo que el diálogo de confirmar,
+     pero un poco por debajo en z-index por si alguna vez hiciera falta abrir
+     un confirm() encima. */
+  #ableton-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;
+    align-items:center;justify-content:center;z-index:240;padding:20px;}
+  #ableton-panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;
+    padding:20px;max-width:380px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,0.3);}
+  #ableton-panel h2{margin:0 0 4px;font-size:17px;}
+  #ableton-status{font-size:12px;margin:10px 0 0;line-height:1.4;}
+  #ableton-status.ok{color:#2e9e4f;}
+  #ableton-status.err{color:#c0271d;}
+
   /* Foto de acordes: overlay de "leyendo la foto..." mientras se hace OCR */
   #ocr-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:220;
     display:flex;align-items:center;justify-content:center;padding:20px;}
@@ -200,6 +212,7 @@
     </div>
     <div style="display:flex;gap:8px;align-items:center;">
       <button class="btn btn-icon" id="btn-theme-toggle" title="Cambiar a modo oscuro">🌙</button>
+      <button class="btn btn-sm" id="btn-ableton-settings" title="Ajustes de Ableton (opcional)">🎹 Ableton</button>
       <button class="btn btn-sm" id="btn-export">Exportar copia</button>
       <button class="btn btn-sm" id="btn-import">Importar copia</button>
       <input type="file" id="import-file" accept="application/json" class="hidden">
@@ -358,6 +371,39 @@
   <div id="confirm-panel">
     <p id="confirm-message"></p>
     <div id="confirm-actions"></div>
+  </div>
+</div>
+
+<!-- ============ AJUSTES DE ABLETON (opcional) ============ -->
+<div id="ableton-overlay" class="hidden">
+  <div id="ableton-panel">
+    <h2>Ableton (opcional)</h2>
+    <p class="help-text">
+      Si tienes el "ayudante de Ableton" en marcha en tu ordenador (un
+      programita aparte, ver instrucciones), la app le avisará sola al
+      cambiar de canción o de transporte, para que dispare la escena y el
+      tono que tocan en Ableton. Si dejas esto vacío, la app funciona
+      exactamente igual que hasta ahora — esto es del todo opcional.
+    </p>
+    <div class="field">
+      <label for="ableton-url">Dirección del ayudante (URL de tu ordenador en la red)</label>
+      <input type="text" id="ableton-url" placeholder="https://192.168.1.23:8793">
+    </div>
+    <div class="field">
+      <label for="ableton-offset">Desfase de escena (déjalo en 0 salvo que haga falta)</label>
+      <input type="number" id="ableton-offset" step="1" value="0">
+    </div>
+    <p id="ableton-status"></p>
+    <div class="editor-actions" style="margin:14px 0 0;position:static;background:none;border-top:none;padding:0;">
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-sm" id="btn-ableton-test">Probar conexión</button>
+        <button class="btn btn-sm" id="btn-ableton-rescan" title="Vuelve a buscar pistas con el dispositivo Pitch en Ableton, sin reiniciar el programa">🔄 Volver a buscar pistas</button>
+      </div>
+      <div class="right">
+        <button class="btn btn-sm" id="btn-ableton-close">Cerrar</button>
+        <button class="btn btn-accent btn-sm" id="btn-ableton-save">Guardar</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -960,6 +1006,126 @@
     updateThemeToggleBtn();
   });
 
+  /* ===================== ABLETON (opcional) =====================
+     Si Albert tiene el "ayudante de Ableton" (un programita aparte, fuera
+     de esta página) corriendo en su ordenador y accesible en la misma red,
+     esta app le avisa por HTTP (fetch normal, sin MIDI ni nada especial)
+     cada vez que cambia de canción o de transporte, con la escena y el
+     tono que le tocan. Si no hay nada configurado, o el aviso falla (el
+     ordenador no está encendido, no está en la misma red, etc.), la app
+     sigue funcionando exactamente igual — este aviso es "best effort" y
+     nunca debe bloquear ni romper nada del resto de la aplicación. */
+  const ABLETON_CONFIG_KEY = "modoEscenario.abletonConfig"; // solo en este dispositivo, no se sincroniza
+  function loadAbletonConfig(){
+    try{
+      const raw = safeStorage.getItem(ABLETON_CONFIG_KEY);
+      if(!raw) return { url: '', offset: 0 };
+      const parsed = JSON.parse(raw);
+      return { url: parsed.url || '', offset: Number(parsed.offset) || 0 };
+    }catch(e){ return { url: '', offset: 0 }; }
+  }
+  function saveAbletonConfig(cfg){
+    safeStorage.setItem(ABLETON_CONFIG_KEY, JSON.stringify(cfg));
+  }
+  let abletonConfig = loadAbletonConfig();
+
+  // Aviso "best effort": nunca debe tardar mucho ni romper nada si falla.
+  function notifyAbleton(sceneIndex, transpose){
+    if(!abletonConfig.url) return;
+    const url = abletonConfig.url.replace(/\/+$/, '') + '/song-change';
+    const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 1500) : null;
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scene: sceneIndex, transpose: transpose }),
+      signal: controller ? controller.signal : undefined,
+    }).catch(() => { /* sin conexión con el ayudante: no pasa nada, seguimos */ })
+      .finally(() => { if(timer) clearTimeout(timer); });
+  }
+
+  const abletonOverlay = document.getElementById('ableton-overlay');
+  const abletonUrlInput = document.getElementById('ableton-url');
+  const abletonOffsetInput = document.getElementById('ableton-offset');
+  const abletonStatus = document.getElementById('ableton-status');
+
+  function openAbletonSettings(){
+    abletonUrlInput.value = abletonConfig.url;
+    abletonOffsetInput.value = abletonConfig.offset;
+    abletonStatus.textContent = '';
+    abletonStatus.className = '';
+    abletonOverlay.classList.remove('hidden');
+  }
+  function closeAbletonSettings(){
+    abletonOverlay.classList.add('hidden');
+  }
+  document.getElementById('btn-ableton-settings').addEventListener('click', openAbletonSettings);
+  document.getElementById('btn-ableton-close').addEventListener('click', closeAbletonSettings);
+  document.getElementById('btn-ableton-save').addEventListener('click', () => {
+    abletonConfig = {
+      url: abletonUrlInput.value.trim(),
+      offset: parseInt(abletonOffsetInput.value, 10) || 0,
+    };
+    saveAbletonConfig(abletonConfig);
+    showToast('Ajustes de Ableton guardados.');
+    closeAbletonSettings();
+  });
+  document.getElementById('btn-ableton-test').addEventListener('click', async () => {
+    const url = abletonUrlInput.value.trim();
+    if(!url){
+      abletonStatus.textContent = 'Escribe primero la dirección del ayudante.';
+      abletonStatus.className = 'err';
+      return;
+    }
+    abletonStatus.textContent = 'Probando…';
+    abletonStatus.className = '';
+    try{
+      const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), 3000) : null;
+      const res = await fetch(url.replace(/\/+$/, '') + '/ping', { signal: controller ? controller.signal : undefined });
+      if(timer) clearTimeout(timer);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const tracks = (data && data.pitchTracks) || [];
+      abletonStatus.textContent = tracks.length
+        ? ('✔ Conectado. Pistas con transporte automático: ' + tracks.join(', '))
+        : '✔ Conectado, pero no encuentra ninguna pista con el dispositivo "Pitch".';
+      abletonStatus.className = 'ok';
+    }catch(e){
+      abletonStatus.textContent = '✘ No se ha podido conectar. Comprueba que el ayudante está en marcha, que el iPad está en la misma red, y la dirección (URL).';
+      abletonStatus.className = 'err';
+    }
+  });
+  document.getElementById('btn-ableton-rescan').addEventListener('click', async () => {
+    const url = abletonUrlInput.value.trim();
+    if(!url){
+      abletonStatus.textContent = 'Escribe primero la dirección del ayudante.';
+      abletonStatus.className = 'err';
+      return;
+    }
+    abletonStatus.textContent = 'Buscando pistas de nuevo…';
+    abletonStatus.className = '';
+    try{
+      const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), 4000) : null;
+      const res = await fetch(url.replace(/\/+$/, '') + '/rescan', {
+        method: 'POST',
+        signal: controller ? controller.signal : undefined,
+      });
+      if(timer) clearTimeout(timer);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const tracks = (data && data.pitchTracks) || [];
+      abletonStatus.textContent = tracks.length
+        ? ('✔ Encontradas: ' + tracks.join(', '))
+        : '✔ Rebuscado, pero sigue sin encontrar ninguna pista con el dispositivo "Pitch".';
+      abletonStatus.className = 'ok';
+    }catch(e){
+      abletonStatus.textContent = '✘ No se ha podido conectar para volver a buscar. Comprueba que el ayudante está en marcha.';
+      abletonStatus.className = 'err';
+    }
+  });
+
   /* ===================== EXPORT / IMPORT (copia de seguridad) ===================== */
   document.getElementById('btn-export').addEventListener('click', async () => {
     const stamp = new Date().toISOString().slice(0,10);
@@ -1117,6 +1283,11 @@
     lyricsScroll.scrollTop = 0;
 
     updatePlayButton();
+
+    // Aviso opcional al ayudante de Ableton (si está configurado): esta
+    // canción y este transporte. No hace nada si no hay URL guardada, y si
+    // falla no afecta al resto de la app (ver notifyAbleton).
+    notifyAbleton(currentIndex, currentTranspose);
   }
 
   // El transporte se guarda por canción (así cada vez que la abres recuerda
@@ -1145,9 +1316,11 @@
   });
   document.getElementById('btn-transpose-up').addEventListener('click', () => {
     currentTranspose++; updateTransposeLabel(); saveTranspose();
+    notifyAbleton(currentIndex, currentTranspose);
   });
   document.getElementById('btn-transpose-down').addEventListener('click', () => {
     currentTranspose--; updateTransposeLabel(); saveTranspose();
+    notifyAbleton(currentIndex, currentTranspose);
   });
   document.getElementById('btn-close-stage').addEventListener('click', closeStage);
   document.getElementById('btn-edit-current').addEventListener('click', () => {
