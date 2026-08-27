@@ -129,6 +129,12 @@
   .transpose-row .box button:hover{background:var(--panel);}
   .transpose-row .value{min-width:74px;text-align:center;color:var(--text);font-weight:700;font-size:15px;}
 
+  .live-trigger-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+  .live-trigger-row.hidden{display:none;}
+  .live-trigger-btn{background:rgba(0,0,0,0.25);border:none;color:#f2f2f2;font-size:12px;font-weight:700;
+    padding:6px 12px;border-radius:9px;letter-spacing:0.01em;}
+  .live-trigger-btn:active{background:var(--accent);color:var(--accent-text);}
+
   #obs-box{margin:10px 16px 0;background:#c0271d;border:none;border-radius:8px;padding:9px 12px;font-size:12px;}
   #obs-box .obs-label{color:#ffffff;font-weight:700;font-size:10px;letter-spacing:0.05em;margin-bottom:4px;opacity:0.85;}
   #obs-box textarea{width:100%;background:none;border:none;color:#ffffff;resize:none;font-size:19px;font-weight:700;line-height:1.25;padding:0;min-height:26px;}
@@ -281,6 +287,20 @@
       </span>
     </div>
 
+    <div class="field" id="f-live-field">
+      <label for="f-live-triggers">Cambios de sonido en directo (opcional)</label>
+      <textarea id="f-live-triggers" rows="2" placeholder="Sonido 2 = 14
+Volver al sonido 1 = 6"></textarea>
+      <span class="help-text">
+        Solo para canciones que usan más de un sonido durante la propia canción (como
+        "Video Kill"). Una línea por botón: el texto que quieres ver, un signo =, y el
+        número de escena de Ableton tal cual lo ves en el programa (sin desfase — este
+        número no es una canción de la lista). Aparecen como botones en el escenario
+        para que los dispares tú en el momento justo; no cambian de canción ni tocan la
+        letra en pantalla. Déjalo vacío si esta canción usa un solo sonido.
+      </span>
+    </div>
+
     <div class="field">
       <label>Letra y acordes</label>
       <textarea id="f-content" placeholder="## Intro
@@ -345,6 +365,8 @@
         <button id="btn-transpose-up">+</button>
       </div>
     </div>
+
+    <div class="live-trigger-row hidden" id="live-trigger-row"></div>
   </div>
 
   <div id="obs-box">
@@ -909,6 +931,7 @@
   const fColorHex = document.getElementById('f-color-hex');
   const fContent = document.getElementById('f-content');
   const fAbletonPitch = document.getElementById('f-ableton-pitch');
+  const fLiveTriggers = document.getElementById('f-live-triggers');
   const editorPreview = document.getElementById('editor-preview');
   const btnDeleteSong = document.getElementById('btn-delete-song');
 
@@ -929,6 +952,9 @@
     fColorHex.value = color;
     fContent.value = song ? song.content || '' : DEFAULT_CONTENT;
     fAbletonPitch.value = (song && song.abletonPitchOffset) ? song.abletonPitchOffset : 0;
+    fLiveTriggers.value = (song && Array.isArray(song.liveTriggers))
+      ? song.liveTriggers.map(t => `${t.label} = ${t.scene}`).join('\n')
+      : '';
 
     btnDeleteSong.classList.toggle('hidden', editingIndex === null);
     updatePreview();
@@ -948,6 +974,21 @@
 
   function isValidHex(v){
     return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim());
+  }
+
+  // "Cambios de sonido en directo": una línea por botón, "Etiqueta = escena".
+  // Se ignoran silenciosamente las líneas que no tengan ese formato, para no
+  // bloquear el guardado por un error de tecleo — el botón simplemente no
+  // aparecerá si una línea no se puede leer.
+  function parseLiveTriggers(text){
+    return (text || '').split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+      const idx = line.lastIndexOf('=');
+      if(idx === -1) return null;
+      const label = line.slice(0, idx).trim();
+      const scene = parseInt(line.slice(idx + 1).trim(), 10);
+      if(!label || Number.isNaN(scene)) return null;
+      return { label, scene };
+    }).filter(Boolean);
   }
 
   fColorPicker.addEventListener('input', () => { fColorHex.value = fColorPicker.value; });
@@ -976,6 +1017,7 @@
       color,
       content: fContent.value,
       abletonPitchOffset: parseInt(fAbletonPitch.value, 10) || 0,
+      liveTriggers: parseLiveTriggers(fLiveTriggers.value),
     };
     if(editingIndex !== null){
       songs[editingIndex] = Object.assign({}, songs[editingIndex], data);
@@ -1064,6 +1106,44 @@
       signal: controller ? controller.signal : undefined,
     }).catch(() => { /* sin conexión con el ayudante: no pasa nada, seguimos */ })
       .finally(() => { if(timer) clearTimeout(timer); });
+  }
+
+  // Botones de "cambio de sonido en directo" (song.liveTriggers): igual de
+  // "best effort" que notifyAbleton, pero sin tocar la canción cargada ni el
+  // Pitch — solo dispara la escena que le digas, tal cual, en el ayudante.
+  function notifyMidSceneChange(scene){
+    if(!abletonConfig.url) return;
+    const url = abletonConfig.url.replace(/\/+$/, '') + '/mid-scene-change';
+    const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 1500) : null;
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scene: scene }),
+      signal: controller ? controller.signal : undefined,
+    }).catch(() => { /* sin conexión con el ayudante: no pasa nada, seguimos */ })
+      .finally(() => { if(timer) clearTimeout(timer); });
+  }
+
+  const liveTriggerRow = document.getElementById('live-trigger-row');
+  function renderLiveTriggers(song){
+    const triggers = (song && Array.isArray(song.liveTriggers)) ? song.liveTriggers : [];
+    liveTriggerRow.innerHTML = '';
+    if(!triggers.length){
+      liveTriggerRow.classList.add('hidden');
+      return;
+    }
+    liveTriggerRow.classList.remove('hidden');
+    triggers.forEach(t => {
+      const btn = document.createElement('button');
+      btn.className = 'live-trigger-btn';
+      btn.textContent = t.label;
+      btn.addEventListener('click', () => {
+        notifyMidSceneChange(t.scene);
+        showToast(`Sonido: ${t.label}`);
+      });
+      liveTriggerRow.appendChild(btn);
+    });
   }
 
   const abletonOverlay = document.getElementById('ableton-overlay');
@@ -1301,6 +1381,8 @@
 
     obsText.value = song.observations || '';
     autoResizeObs();
+
+    renderLiveTriggers(song);
 
     lyricsScroll.scrollTop = 0;
 
