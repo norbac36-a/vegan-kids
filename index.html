@@ -271,6 +271,16 @@
       </div>
     </div>
 
+    <div class="field" id="f-ableton-field">
+      <label for="f-ableton-pitch">Pitch automático en Ableton (semitonos)</label>
+      <input type="number" id="f-ableton-pitch" step="1" value="0" placeholder="0">
+      <span class="help-text">
+        Se manda solo a Ableton al cargar esta canción — no toca los acordes que ves en pantalla.
+        Déjalo en 0 si no hace falta tocar el tono. Para una canción que necesita sonar,
+        por ejemplo, 2 semitonos más grave, pon -2 (como Sweet Symphony).
+      </span>
+    </div>
+
     <div class="field">
       <label>Letra y acordes</label>
       <textarea id="f-content" placeholder="## Intro
@@ -898,6 +908,7 @@
   const fColorPicker = document.getElementById('f-color-picker');
   const fColorHex = document.getElementById('f-color-hex');
   const fContent = document.getElementById('f-content');
+  const fAbletonPitch = document.getElementById('f-ableton-pitch');
   const editorPreview = document.getElementById('editor-preview');
   const btnDeleteSong = document.getElementById('btn-delete-song');
 
@@ -917,6 +928,7 @@
     fColorPicker.value = color;
     fColorHex.value = color;
     fContent.value = song ? song.content || '' : DEFAULT_CONTENT;
+    fAbletonPitch.value = (song && song.abletonPitchOffset) ? song.abletonPitchOffset : 0;
 
     btnDeleteSong.classList.toggle('hidden', editingIndex === null);
     updatePreview();
@@ -963,6 +975,7 @@
       duration: fDuration.value.trim(),
       color,
       content: fContent.value,
+      abletonPitchOffset: parseInt(fAbletonPitch.value, 10) || 0,
     };
     if(editingIndex !== null){
       songs[editingIndex] = Object.assign({}, songs[editingIndex], data);
@@ -1028,6 +1041,15 @@
     safeStorage.setItem(ABLETON_CONFIG_KEY, JSON.stringify(cfg));
   }
   let abletonConfig = loadAbletonConfig();
+
+  // El "transporte" de la app (los botones +/-) solo cambia lo que se VE en
+  // pantalla — los acordes. El Pitch real que se manda a Ableton es un valor
+  // FIJO, independiente, guardado por canción (song.abletonPitchOffset):
+  // así una canción como Sweet Symphony puede necesitar -2 semitonos de
+  // verdad en Ableton sin que eso mueva ni un poco los acordes en pantalla.
+  function abletonPitchFor(song){
+    return (song && song.abletonPitchOffset) || 0;
+  }
 
   // Aviso "best effort": nunca debe tardar mucho ni romper nada si falla.
   function notifyAbleton(sceneIndex, transpose){
@@ -1287,7 +1309,7 @@
     // Aviso opcional al ayudante de Ableton (si está configurado): esta
     // canción y este transporte. No hace nada si no hay URL guardada, y si
     // falla no afecta al resto de la app (ver notifyAbleton).
-    notifyAbleton(currentIndex, currentTranspose);
+    notifyAbleton(currentIndex, abletonPitchFor(song));
   }
 
   // El transporte se guarda por canción (así cada vez que la abres recuerda
@@ -1315,12 +1337,12 @@
     if(currentIndex < songs.length - 1){ currentIndex++; renderStageSong(); }
   });
   document.getElementById('btn-transpose-up').addEventListener('click', () => {
+    // Los botones +/- solo cambian los acordes en pantalla; el Pitch de
+    // Ableton se queda fijo (ver abletonPitchFor) y no se toca aquí.
     currentTranspose++; updateTransposeLabel(); saveTranspose();
-    notifyAbleton(currentIndex, currentTranspose);
   });
   document.getElementById('btn-transpose-down').addEventListener('click', () => {
     currentTranspose--; updateTransposeLabel(); saveTranspose();
-    notifyAbleton(currentIndex, currentTranspose);
   });
   document.getElementById('btn-close-stage').addEventListener('click', closeStage);
   document.getElementById('btn-edit-current').addEventListener('click', () => {
