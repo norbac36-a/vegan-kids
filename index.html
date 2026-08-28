@@ -316,6 +316,20 @@
       </span>
     </div>
 
+    <div class="field" id="f-prepared-tracks-field">
+      <label for="f-prepared-tracks">Pistas preparadas, sin sonido (opcional)</label>
+      <textarea id="f-prepared-tracks" rows="2" placeholder="3"></textarea>
+      <span class="help-text">
+        Para pistas que se tienen que ver activas (botoncito amarillo
+        encendido, sin mute) desde que carga la canción, pero que NO deben
+        sonar todavía — solo sonarán cuando tú las armes a mano con el botón
+        rojo en mitad de la canción (p.ej. el segundo sonido de Video
+        Killed). Una pista por línea. Si una pista está aquí y también en
+        "Pistas activas", gana "Pistas activas" (queda armada de inicio).
+        Déjalo vacío si esta canción no necesita ninguna pista preparada.
+      </span>
+    </div>
+
     <div class="field" id="f-extra-scenes-field">
       <label for="f-extra-scenes">Escenas extra al cargar (opcional)</label>
       <textarea id="f-extra-scenes" rows="2" placeholder="14
@@ -988,6 +1002,7 @@ Volver al sonido 1 = 6"></textarea>
   const fLiveTriggers = document.getElementById('f-live-triggers');
   const fChainSelectors = document.getElementById('f-chain-selectors');
   const fActiveTracks = document.getElementById('f-active-tracks');
+  const fPreparedTracks = document.getElementById('f-prepared-tracks');
   const editorPreview = document.getElementById('editor-preview');
   const btnDeleteSong = document.getElementById('btn-delete-song');
 
@@ -1019,6 +1034,9 @@ Volver al sonido 1 = 6"></textarea>
       : '';
     fActiveTracks.value = (song && Array.isArray(song.activeTracks))
       ? song.activeTracks.join('\n')
+      : '';
+    fPreparedTracks.value = (song && Array.isArray(song.preparedTracks))
+      ? song.preparedTracks.join('\n')
       : '';
 
     btnDeleteSong.classList.toggle('hidden', editingIndex === null);
@@ -1120,6 +1138,7 @@ Volver al sonido 1 = 6"></textarea>
       liveTriggers: parseLiveTriggers(fLiveTriggers.value),
       chainSelectors: parseChainSelectors(fChainSelectors.value),
       activeTracks: parseActiveTracks(fActiveTracks.value),
+      preparedTracks: parseActiveTracks(fPreparedTracks.value),
     };
     if(editingIndex !== null){
       songs[editingIndex] = Object.assign({}, songs[editingIndex], data);
@@ -1196,7 +1215,7 @@ Volver al sonido 1 = 6"></textarea>
   }
 
   // Aviso "best effort": nunca debe tardar mucho ni romper nada si falla.
-  function notifyAbleton(sceneIndex, transpose, chainSelectors, activeTracks){
+  function notifyAbleton(sceneIndex, transpose, chainSelectors, activeTracks, preparedTracks){
     if(!abletonConfig.url) return;
     const url = abletonConfig.url.replace(/\/+$/, '') + '/song-change';
     const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -1204,6 +1223,7 @@ Volver al sonido 1 = 6"></textarea>
     const body = { scene: sceneIndex, transpose: transpose };
     if(Array.isArray(chainSelectors) && chainSelectors.length) body.chainSelectors = chainSelectors;
     if(Array.isArray(activeTracks)) body.activeTracks = activeTracks;
+    if(Array.isArray(preparedTracks)) body.preparedTracks = preparedTracks;
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1472,7 +1492,10 @@ Volver al sonido 1 = 6"></textarea>
     const atText = (Array.isArray(song.activeTracks) && song.activeTracks.length)
       ? song.activeTracks.join(',')
       : 'ninguna';
-    tagCs.textContent = `CS: ${csText} · AT: ${atText}`;
+    const ptText = (Array.isArray(song.preparedTracks) && song.preparedTracks.length)
+      ? song.preparedTracks.join(',')
+      : 'ninguna';
+    tagCs.textContent = `CS: ${csText} · AT: ${atText} · PT: ${ptText}`;
     const headerBg = song.color || '#1c1c1c';
     stageHeader.style.background = headerBg;
     stageHeader.style.setProperty('--header-text', getContrastTextColor(headerBg));
@@ -1504,7 +1527,7 @@ Volver al sonido 1 = 6"></textarea>
     // Aviso opcional al ayudante de Ableton (si está configurado): esta
     // canción y este transporte. No hace nada si no hay URL guardada, y si
     // falla no afecta al resto de la app (ver notifyAbleton).
-    notifyAbleton(currentIndex, abletonPitchFor(song), song.chainSelectors, song.activeTracks);
+    notifyAbleton(currentIndex, abletonPitchFor(song), song.chainSelectors, song.activeTracks, song.preparedTracks);
     // Algunas canciones necesitan encender DOS sonidos a la vez porque esas
     // pistas no comparten fila de escena en Ableton (song.extraLoadScenes).
     // Se disparan igual que un botón de "cambio de sonido en directo", pero
