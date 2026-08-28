@@ -287,6 +287,21 @@
       </span>
     </div>
 
+    <div class="field" id="f-chain-selectors-field">
+      <label for="f-chain-selectors">Sonidos de los racks (opcional)</label>
+      <textarea id="f-chain-selectors" rows="2" placeholder="4 = 90
+5 = 66"></textarea>
+      <span class="help-text">
+        Para elegir automáticamente qué sonido suena en las pistas con varios
+        sonidos (Instrument Rack), sin tener que darle tú al selector a mano.
+        Una línea por pista: el número de pista tal cual lo ves en Ableton,
+        un signo =, y el valor del "Chain Selector" que quieres en esa
+        pista para esta canción (mira el mapa de racks para saber los
+        valores). Déjalo vacío si esta canción no necesita cambiar ningún
+        rack.
+      </span>
+    </div>
+
     <div class="field" id="f-extra-scenes-field">
       <label for="f-extra-scenes">Escenas extra al cargar (opcional)</label>
       <textarea id="f-extra-scenes" rows="2" placeholder="14
@@ -947,6 +962,7 @@ Volver al sonido 1 = 6"></textarea>
   const fAbletonPitch = document.getElementById('f-ableton-pitch');
   const fExtraScenes = document.getElementById('f-extra-scenes');
   const fLiveTriggers = document.getElementById('f-live-triggers');
+  const fChainSelectors = document.getElementById('f-chain-selectors');
   const editorPreview = document.getElementById('editor-preview');
   const btnDeleteSong = document.getElementById('btn-delete-song');
 
@@ -972,6 +988,9 @@ Volver al sonido 1 = 6"></textarea>
       : '';
     fLiveTriggers.value = (song && Array.isArray(song.liveTriggers))
       ? song.liveTriggers.map(t => `${t.label} = ${t.scene}`).join('\n')
+      : '';
+    fChainSelectors.value = (song && Array.isArray(song.chainSelectors))
+      ? song.chainSelectors.map(c => `${c.track} = ${c.value}`).join('\n')
       : '';
 
     btnDeleteSong.classList.toggle('hidden', editingIndex === null);
@@ -1017,6 +1036,20 @@ Volver al sonido 1 = 6"></textarea>
     }).filter(Boolean);
   }
 
+  // "Sonidos de los racks": una línea por pista, "número de pista = valor".
+  // El número de pista es el que ves en Ableton (empezando en 1), igual que
+  // en el mapa de racks. Se ignoran silenciosamente las líneas mal escritas.
+  function parseChainSelectors(text){
+    return (text || '').split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+      const idx = line.indexOf('=');
+      if(idx === -1) return null;
+      const track = parseInt(line.slice(0, idx).trim(), 10);
+      const value = parseInt(line.slice(idx + 1).trim(), 10);
+      if(Number.isNaN(track) || Number.isNaN(value)) return null;
+      return { track, value };
+    }).filter(Boolean);
+  }
+
   fColorPicker.addEventListener('input', () => { fColorHex.value = fColorPicker.value; });
   fColorHex.addEventListener('input', () => {
     if(isValidHex(fColorHex.value)) fColorPicker.value = fColorHex.value;
@@ -1045,6 +1078,7 @@ Volver al sonido 1 = 6"></textarea>
       abletonPitchOffset: parseInt(fAbletonPitch.value, 10) || 0,
       extraLoadScenes: parseExtraScenes(fExtraScenes.value),
       liveTriggers: parseLiveTriggers(fLiveTriggers.value),
+      chainSelectors: parseChainSelectors(fChainSelectors.value),
     };
     if(editingIndex !== null){
       songs[editingIndex] = Object.assign({}, songs[editingIndex], data);
@@ -1121,15 +1155,17 @@ Volver al sonido 1 = 6"></textarea>
   }
 
   // Aviso "best effort": nunca debe tardar mucho ni romper nada si falla.
-  function notifyAbleton(sceneIndex, transpose){
+  function notifyAbleton(sceneIndex, transpose, chainSelectors){
     if(!abletonConfig.url) return;
     const url = abletonConfig.url.replace(/\/+$/, '') + '/song-change';
     const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), 1500) : null;
+    const body = { scene: sceneIndex, transpose: transpose };
+    if(Array.isArray(chainSelectors) && chainSelectors.length) body.chainSelectors = chainSelectors;
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scene: sceneIndex, transpose: transpose }),
+      body: JSON.stringify(body),
       signal: controller ? controller.signal : undefined,
     }).catch(() => { /* sin conexión con el ayudante: no pasa nada, seguimos */ })
       .finally(() => { if(timer) clearTimeout(timer); });
@@ -1418,7 +1454,7 @@ Volver al sonido 1 = 6"></textarea>
     // Aviso opcional al ayudante de Ableton (si está configurado): esta
     // canción y este transporte. No hace nada si no hay URL guardada, y si
     // falla no afecta al resto de la app (ver notifyAbleton).
-    notifyAbleton(currentIndex, abletonPitchFor(song));
+    notifyAbleton(currentIndex, abletonPitchFor(song), song.chainSelectors);
     // Algunas canciones necesitan encender DOS sonidos a la vez porque esas
     // pistas no comparten fila de escena en Ableton (song.extraLoadScenes).
     // Se disparan igual que un botón de "cambio de sonido en directo", pero
