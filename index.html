@@ -302,6 +302,20 @@
       </span>
     </div>
 
+    <div class="field" id="f-active-tracks-field">
+      <label for="f-active-tracks">Pistas activas (opcional)</label>
+      <textarea id="f-active-tracks" rows="2" placeholder="1
+2"></textarea>
+      <span class="help-text">
+        Para activar solas, sin pulsar el botón rojo a mano, las pistas que
+        suenan en esta canción (hammond, Piano, Pads, boys dont, o la pista
+        dedicada de esta canción). Una pista por línea, el número tal cual
+        lo ves en Ableton. El resto de pistas de ese grupo se silencian
+        automáticamente. Déjalo vacío si esta canción no usa ninguna de esas
+        pistas.
+      </span>
+    </div>
+
     <div class="field" id="f-extra-scenes-field">
       <label for="f-extra-scenes">Escenas extra al cargar (opcional)</label>
       <textarea id="f-extra-scenes" rows="2" placeholder="14
@@ -973,6 +987,7 @@ Volver al sonido 1 = 6"></textarea>
   const fExtraScenes = document.getElementById('f-extra-scenes');
   const fLiveTriggers = document.getElementById('f-live-triggers');
   const fChainSelectors = document.getElementById('f-chain-selectors');
+  const fActiveTracks = document.getElementById('f-active-tracks');
   const editorPreview = document.getElementById('editor-preview');
   const btnDeleteSong = document.getElementById('btn-delete-song');
 
@@ -1001,6 +1016,9 @@ Volver al sonido 1 = 6"></textarea>
       : '';
     fChainSelectors.value = (song && Array.isArray(song.chainSelectors))
       ? song.chainSelectors.map(c => `${c.track} = ${c.value}`).join('\n')
+      : '';
+    fActiveTracks.value = (song && Array.isArray(song.activeTracks))
+      ? song.activeTracks.join('\n')
       : '';
 
     btnDeleteSong.classList.toggle('hidden', editingIndex === null);
@@ -1060,6 +1078,18 @@ Volver al sonido 1 = 6"></textarea>
     }).filter(Boolean);
   }
 
+  // "Pistas activas": una pista por línea (número tal cual se ve en
+  // Ableton, empezando en 1) — hammond, Piano, Pads, boys dont, o la(s)
+  // pista(s) dedicada(s) de esta canción. El ayudante desactiva (mute) el
+  // resto de pistas de ese grupo automáticamente, así no hace falta pulsar
+  // el botón rojo a mano. Se ignoran silenciosamente las líneas que no sean
+  // un número.
+  function parseActiveTracks(text){
+    return (text || '').split('\n').map(line => line.trim()).filter(Boolean)
+      .map(line => parseInt(line, 10))
+      .filter(n => !Number.isNaN(n));
+  }
+
   fColorPicker.addEventListener('input', () => { fColorHex.value = fColorPicker.value; });
   fColorHex.addEventListener('input', () => {
     if(isValidHex(fColorHex.value)) fColorPicker.value = fColorHex.value;
@@ -1089,6 +1119,7 @@ Volver al sonido 1 = 6"></textarea>
       extraLoadScenes: parseExtraScenes(fExtraScenes.value),
       liveTriggers: parseLiveTriggers(fLiveTriggers.value),
       chainSelectors: parseChainSelectors(fChainSelectors.value),
+      activeTracks: parseActiveTracks(fActiveTracks.value),
     };
     if(editingIndex !== null){
       songs[editingIndex] = Object.assign({}, songs[editingIndex], data);
@@ -1165,13 +1196,14 @@ Volver al sonido 1 = 6"></textarea>
   }
 
   // Aviso "best effort": nunca debe tardar mucho ni romper nada si falla.
-  function notifyAbleton(sceneIndex, transpose, chainSelectors){
+  function notifyAbleton(sceneIndex, transpose, chainSelectors, activeTracks){
     if(!abletonConfig.url) return;
     const url = abletonConfig.url.replace(/\/+$/, '') + '/song-change';
     const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), 1500) : null;
     const body = { scene: sceneIndex, transpose: transpose };
     if(Array.isArray(chainSelectors) && chainSelectors.length) body.chainSelectors = chainSelectors;
+    if(Array.isArray(activeTracks)) body.activeTracks = activeTracks;
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1434,9 +1466,13 @@ Volver al sonido 1 = 6"></textarea>
     tagKey.textContent = song.key || '—';
     tagBpm.textContent = (song.bpm || '—') + ' bpm';
     tagDuration.textContent = song.duration || '—';
-    tagCs.textContent = 'CS: ' + ((Array.isArray(song.chainSelectors) && song.chainSelectors.length)
+    const csText = (Array.isArray(song.chainSelectors) && song.chainSelectors.length)
       ? song.chainSelectors.map(c => `${c.track}=${c.value}`).join(',')
-      : 'ninguno');
+      : 'ninguno';
+    const atText = (Array.isArray(song.activeTracks) && song.activeTracks.length)
+      ? song.activeTracks.join(',')
+      : 'ninguna';
+    tagCs.textContent = `CS: ${csText} · AT: ${atText}`;
     const headerBg = song.color || '#1c1c1c';
     stageHeader.style.background = headerBg;
     stageHeader.style.setProperty('--header-text', getContrastTextColor(headerBg));
@@ -1468,7 +1504,7 @@ Volver al sonido 1 = 6"></textarea>
     // Aviso opcional al ayudante de Ableton (si está configurado): esta
     // canción y este transporte. No hace nada si no hay URL guardada, y si
     // falla no afecta al resto de la app (ver notifyAbleton).
-    notifyAbleton(currentIndex, abletonPitchFor(song), song.chainSelectors);
+    notifyAbleton(currentIndex, abletonPitchFor(song), song.chainSelectors, song.activeTracks);
     // Algunas canciones necesitan encender DOS sonidos a la vez porque esas
     // pistas no comparten fila de escena en Ableton (song.extraLoadScenes).
     // Se disparan igual que un botón de "cambio de sonido en directo", pero
