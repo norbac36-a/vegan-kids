@@ -369,6 +369,7 @@ Volver al sonido 1 = 6"></textarea>
           <span class="stage-tag" id="tag-key">—</span>
           <span class="stage-tag" id="tag-bpm">— bpm</span>
           <span class="stage-tag" id="tag-duration">—</span>
+          <span class="stage-tag" id="tag-cs" title="Diagnóstico temporal: qué chainSelectors tiene esta canción ahora mismo">CS: —</span>
         </div>
       </div>
       <div class="icon-row">
@@ -567,6 +568,10 @@ Volver al sonido 1 = 6"></textarea>
   // mismo nombre para no tener que tocar el resto del código.
   let artifactCap = null;
   let syncWriteBlocked = false;
+  // Diagnóstico temporal: refleja si la ÚLTIMA vez que se intentó traer
+  // datos de Firebase funcionó de verdad o no, para poder verlo en pantalla
+  // en vez de tener que adivinarlo. null = todavía no se ha intentado.
+  let lastPullOk = null;
   let pushTimer = null;
   // Se incrementa en cada saveSongs(). Nos sirve para detectar si el usuario
   // ha tocado algo mientras esperábamos una respuesta de red (al arrancar, o
@@ -658,6 +663,7 @@ Volver al sonido 1 = 6"></textarea>
     }
     const versionBeforePull = localVersion;
     const result = await pullSyncedSongs();
+    lastPullOk = !result.offline;
     if(result.found){
       if(localVersion !== versionBeforePull){
         // El usuario ya ha tocado algo en los instantes que ha tardado esta
@@ -699,9 +705,13 @@ Volver al sonido 1 = 6"></textarea>
   function updateSyncSubtitle(){
     const el = document.getElementById('list-subtitle');
     if(!el) return;
-    el.textContent = artifactCap
-      ? 'Niños Veganos · repertorio sincronizado entre tus dispositivos'
-      : 'Niños Veganos · repertorio guardado en este dispositivo';
+    if(!artifactCap){
+      el.textContent = 'Niños Veganos · repertorio guardado en este dispositivo';
+    } else if(lastPullOk === false){
+      el.textContent = 'Niños Veganos · ⚠ SIN sincronizar (sin conexión con el servidor, usando datos guardados en este dispositivo)';
+    } else {
+      el.textContent = 'Niños Veganos · repertorio sincronizado entre tus dispositivos';
+    }
   }
 
   // Si hay un guardado pendiente de compartir (dentro de los 600ms de espera)
@@ -1373,6 +1383,7 @@ Volver al sonido 1 = 6"></textarea>
   const tagKey = document.getElementById('tag-key');
   const tagBpm = document.getElementById('tag-bpm');
   const tagDuration = document.getElementById('tag-duration');
+  const tagCs = document.getElementById('tag-cs');
   const stageHeader = document.getElementById('stage-header');
   const stageCounter = document.getElementById('stage-counter');
   const transposeValueEl = document.getElementById('transpose-value');
@@ -1423,6 +1434,9 @@ Volver al sonido 1 = 6"></textarea>
     tagKey.textContent = song.key || '—';
     tagBpm.textContent = (song.bpm || '—') + ' bpm';
     tagDuration.textContent = song.duration || '—';
+    tagCs.textContent = 'CS: ' + ((Array.isArray(song.chainSelectors) && song.chainSelectors.length)
+      ? song.chainSelectors.map(c => `${c.track}=${c.value}`).join(',')
+      : 'ninguno');
     const headerBg = song.color || '#1c1c1c';
     stageHeader.style.background = headerBg;
     stageHeader.style.setProperty('--header-text', getContrastTextColor(headerBg));
