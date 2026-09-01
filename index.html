@@ -866,6 +866,14 @@ Volver al sonido 1 = 6"></textarea>
     return { chordLine, lyricLine, hasChords: chordPositions.length > 0 };
   }
 
+  // Un "marcador de repetición" (x2, x3, x4...) al final de una tirada de
+  // acordes sin letra real (p.ej. un intro o un riff instrumental) no es una
+  // lírica: es parte de la propia línea de acordes. Si se deja como línea de
+  // letra aparte, queda huérfano en su propia fila, separado visualmente de
+  // los acordes a los que pertenece. Aquí lo detectamos y lo pegamos al
+  // final de la línea de acordes en vez de dejarlo como fila de letra.
+  const REPEAT_MARKER_RE = /^[x×]\s?\d+$/i;
+
   function renderParsedContent(parsedLines, semitoneOffset, preferFlats){
     let html = '';
     for(const line of parsedLines){
@@ -875,11 +883,18 @@ Volver al sonido 1 = 6"></textarea>
         html += `<div class="blank-line"></div>`;
       } else {
         const { chordLine, lyricLine, hasChords } = buildChordLyricLines(line.segments, semitoneOffset, preferFlats);
+        const trimmedLyric = lyricLine.trim();
+        const isRepeatMarker = hasChords && REPEAT_MARKER_RE.test(trimmedLyric);
         html += `<div class="chord-lyric-block">`;
         if(hasChords){
-          html += `<div class="chord-line">${escapeHtml(chordLine)}</div>`;
+          const chordLineOut = isRepeatMarker
+            ? chordLine.replace(/\s+$/, '') + '  ' + trimmedLyric
+            : chordLine;
+          html += `<div class="chord-line">${escapeHtml(chordLineOut)}</div>`;
         }
-        html += `<div class="lyric-line-text">${escapeHtml(lyricLine) || '&nbsp;'}</div>`;
+        if(!isRepeatMarker){
+          html += `<div class="lyric-line-text">${escapeHtml(lyricLine) || '&nbsp;'}</div>`;
+        }
         html += `</div>`;
       }
     }
