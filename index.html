@@ -142,7 +142,12 @@
   #obs-box textarea:focus{outline:none;}
 
   #lyrics-scroll{flex:1;overflow-y:auto;overflow-x:auto;padding:22px 16px 90px;}
-  #lyrics-content{width:max-content;min-width:100%;max-width:none;margin:0 auto;padding:0 16px;
+  /* width:max-content (sin min-width:100%) hace que el bloque se ajuste al
+     ancho de su línea más larga, y margin:0 auto lo centra en la pantalla.
+     Antes min-width:100% obligaba al bloque a ocupar siempre todo el ancho
+     del contenedor, así que el margin:auto nunca tenía hueco para centrar
+     nada y el texto quedaba pegado a la izquierda. */
+  #lyrics-content{width:max-content;max-width:none;margin:0 auto;padding:0 16px;
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
     font-size:calc(16px * var(--scale, 1));line-height:1.35;box-sizing:border-box;}
   .section-title{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -157,7 +162,16 @@
     padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
   #stage-bottom .grp{display:flex;align-items:center;gap:8px;}
   #stage-bottom .grp label{font-size:11px;color:var(--text-dim);}
-  #stage-bottom input[type=range]{width:100px;}
+  #stage-bottom input[type=range]{width:150px;height:28px;-webkit-appearance:none;appearance:none;
+    background:transparent;}
+  #stage-bottom input[type=range]::-webkit-slider-runnable-track{height:8px;border-radius:4px;
+    background:var(--panel-2);border:1px solid var(--border);}
+  #stage-bottom input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:28px;height:28px;border-radius:50%;background:var(--accent);border:none;margin-top:-10px;}
+  #stage-bottom input[type=range]::-moz-range-track{height:8px;border-radius:4px;
+    background:var(--panel-2);border:1px solid var(--border);}
+  #stage-bottom input[type=range]::-moz-range-thumb{width:28px;height:28px;border-radius:50%;
+    background:var(--accent);border:none;}
   #play-btn{width:42px;height:42px;border-radius:50%;background:var(--accent);color:var(--accent-text);
     border:none;font-size:16px;display:flex;align-items:center;justify-content:center;}
   .font-ctl{display:flex;align-items:center;gap:6px;}
@@ -1780,26 +1794,24 @@ Volver al sonido 1 = 6"></textarea>
     return (parseInt(m[1],10) * 60) + parseInt(m[2],10);
   }
 
-  // Velocidad de autoscroll ligada al BPM de la canción: a más tempo, más rápido.
-  // PX_PER_BEAT es una aproximación (píxeles que avanza el texto por cada pulso);
-  // el slider de velocidad (0.4x-2.5x) sirve para ajustarlo en directo a cada canción/pantalla.
-  const PX_PER_BEAT = 9;
-
+  // Velocidad de autoscroll: se calcula para que el scroll recorra TODO el
+  // contenido (totalHeight) exactamente en la duración real de la canción.
+  // Antes se usaba un valor fijo de píxeles por pulso (PX_PER_BEAT) basado
+  // solo en el BPM, sin tener en cuenta cuánta letra/acordes tiene cada
+  // canción — por eso en directo la velocidad no iba acorde al tema: una
+  // canción con mucho contenido a un BPM dado terminaba de bajar mucho antes
+  // o mucho después de que acabara la canción. Al basarnos en la duración
+  // (que ya recoge el tempo real de cada tema) y en la altura total a
+  // recorrer, el scroll siempre termina justo cuando termina la canción.
+  // El slider de velocidad (0.4x-2.5x) sigue sirviendo para ajustar a mano
+  // en directo si hace falta.
   function startAutoscroll(){
     const song = songs[currentIndex];
     const totalHeight = lyricsScroll.scrollHeight - lyricsScroll.clientHeight;
     if(totalHeight <= 0){ return; }
     const speedMultiplier = parseFloat(scrollSpeed.value) || 1;
-    const bpm = parseFloat(song && song.bpm);
-    let pxPerMs;
-    if(bpm && bpm > 0){
-      // beats por ms = bpm/60000 → velocidad = px por beat * beats/ms
-      pxPerMs = PX_PER_BEAT * (bpm / 60000) * speedMultiplier;
-    } else {
-      // Sin BPM guardado: usamos la duración de la canción como respaldo
-      const durationSec = parseDurationSeconds(song && song.duration);
-      pxPerMs = (totalHeight / (durationSec * 1000)) * speedMultiplier;
-    }
+    const durationSec = parseDurationSeconds(song && song.duration);
+    const pxPerMs = (totalHeight / (durationSec * 1000)) * speedMultiplier;
     let lastTs = null;
     // Acumulamos la posición en una variable float aparte: scrollTop del DOM
     // se redondea a entero en cada lectura, y con incrementos por debajo de
