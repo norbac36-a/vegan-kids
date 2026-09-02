@@ -111,29 +111,33 @@
   #stage-header .top-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
   #stage-title{font-size:24px;font-weight:700;margin:0;line-height:1.05;color:var(--header-text);}
   #stage-artist{font-size:15px;opacity:0.85;margin:0;color:var(--header-text);}
-  .stage-tags{display:flex;gap:5px;margin-top:2px;flex-wrap:wrap;}
-  .stage-tag{background:rgba(0,0,0,0.28);color:#f2f2f2;border-radius:6px;padding:2px 8px;font-size:14px;font-weight:700;}
-  .icon-row{display:flex;gap:5px;flex:0 0 auto;}
-  .icon-btn{background:rgba(0,0,0,0.25);border:none;color:#f2f2f2;width:24px;height:24px;
-    border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;}
-  .icon-btn.active{background:var(--accent);color:var(--accent-text);}
+  .stage-tags{display:flex;gap:6px;margin-top:2px;flex-wrap:wrap;}
+  /* Cápsulas redondeadas tipo "badge" (inspirado en Faristol: Em / 147 bpm /
+     4/4 / 3:25 como píldoras independientes) — antes eran chips cuadrados. */
+  .stage-tag{background:rgba(0,0,0,0.32);color:#fff;border:1px solid rgba(255,255,255,0.18);
+    border-radius:999px;padding:3px 11px;font-size:13px;font-weight:700;letter-spacing:0.01em;}
+  .icon-row{display:flex;gap:6px;flex:0 0 auto;}
+  .icon-btn{background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.14);color:#f2f2f2;
+    width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:12px;transition:background 0.15s;}
+  .icon-btn.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent);}
   .nav-row{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:0;}
   .nav-row button{background:none;border:none;color:var(--header-text);font-size:48px;line-height:1;padding:0 26px;min-width:84px;min-height:48px;}
   .nav-row button:active{opacity:0.6;}
   .nav-row button:disabled{opacity:0.35;}
   .nav-row .counter{font-size:30px;font-weight:700;color:var(--header-text);opacity:0.95;min-width:88px;text-align:center;font-variant-numeric:tabular-nums;}
   .transpose-row{display:flex;align-items:center;gap:10px;margin-top:0;font-size:12px;font-weight:600;color:var(--header-text);opacity:0.95;letter-spacing:0.02em;}
-  .transpose-row .box{background:var(--panel-2);border:1px solid var(--border);border-radius:9px;
-    display:flex;align-items:center;gap:8px;padding:1px 1px 1px 10px;}
-  .transpose-row .box button{background:none;border:none;color:var(--text);font-size:15px;width:20px;height:20px;border-radius:6px;}
+  .transpose-row .box{background:var(--panel-2);border:1px solid var(--border);border-radius:999px;
+    display:flex;align-items:center;gap:8px;padding:1px 2px 1px 12px;}
+  .transpose-row .box button{background:none;border:none;color:var(--text);font-size:15px;width:22px;height:22px;border-radius:50%;}
   .transpose-row .box button:hover{background:var(--panel);}
   .transpose-row .value{min-width:74px;text-align:center;color:var(--text);font-weight:700;font-size:15px;}
 
   .live-trigger-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
   .live-trigger-row.hidden{display:none;}
-  .live-trigger-btn{background:rgba(0,0,0,0.25);border:none;color:#f2f2f2;font-size:12px;font-weight:700;
-    padding:6px 12px;border-radius:9px;letter-spacing:0.01em;}
-  .live-trigger-btn:active{background:var(--accent);color:var(--accent-text);}
+  .live-trigger-btn{background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.16);color:#f2f2f2;font-size:12px;font-weight:700;
+    padding:6px 13px;border-radius:999px;letter-spacing:0.01em;}
+  .live-trigger-btn:active{background:var(--accent);color:var(--accent-text);border-color:var(--accent);}
 
   #obs-box{margin:10px 16px 0;background:#c0271d;border:none;border-radius:8px;padding:9px 12px;font-size:12px;}
   #obs-box .obs-label{color:#ffffff;font-weight:700;font-size:10px;letter-spacing:0.05em;margin-bottom:4px;opacity:0.85;}
@@ -154,9 +158,20 @@
     font-weight:700;font-size:calc(17px * var(--scale,1));margin:24px 0 6px;}
   .section-title:first-child{margin-top:0;}
   .chord-lyric-block{margin-bottom:2px;}
-  .chord-line{color:var(--chord);font-weight:700;white-space:pre;}
-  .lyric-line-text{white-space:pre;}
+  .chord-line{color:var(--chord);font-weight:700;white-space:pre;transition:font-size 0.2s ease;}
+  .lyric-line-text{white-space:pre;transition:font-size 0.2s ease,opacity 0.2s ease,color 0.2s ease;}
   .blank-line{height:1.1em;}
+  /* Modo "en directo" (mientras suena el autoscroll): la línea actual se
+     agranda y se atenúan las demás, como en Faristol — para saber de un
+     vistazo por dónde vas cantando sin tener que buscarla. Los acordes de
+     la línea actual crecen EXACTAMENTE igual que su letra (mismo font-size,
+     ambos dentro del mismo .chord-lyric-block) para que seguir alineados
+     letra a letra en monospace; si no, se desalinearían. Fuera de "playing"
+     (parado/pausado) todo vuelve al tamaño y color normales. */
+  #lyrics-content.playing .chord-lyric-block .lyric-line-text{opacity:0.5;}
+  #lyrics-content.playing .chord-lyric-block.current-line .chord-line,
+  #lyrics-content.playing .chord-lyric-block.current-line .lyric-line-text{font-size:1.3em;}
+  #lyrics-content.playing .chord-lyric-block.current-line .lyric-line-text{opacity:1;font-weight:700;color:var(--text);}
 
   #stage-bottom{flex:0 0 auto;border-top:1px solid var(--border);background:var(--panel);
     padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
@@ -172,11 +187,13 @@
     background:var(--panel-2);border:1px solid var(--border);}
   #stage-bottom input[type=range]::-moz-range-thumb{width:28px;height:28px;border-radius:50%;
     background:var(--accent);border:none;}
-  #play-btn{width:42px;height:42px;border-radius:50%;background:var(--accent);color:var(--accent-text);
-    border:none;font-size:16px;display:flex;align-items:center;justify-content:center;}
+  #play-btn{width:46px;height:46px;border-radius:50%;background:var(--accent);color:var(--accent-text);
+    border:none;font-size:17px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 2px 8px rgba(0,0,0,0.18);}
+  .bottom-divider{width:1px;align-self:stretch;background:var(--border);margin:4px 2px;}
   .font-ctl{display:flex;align-items:center;gap:6px;}
-  .font-ctl button{width:28px;height:28px;border-radius:6px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);}
-  .font-ctl .pct{font-size:12px;color:var(--text-dim);min-width:38px;text-align:center;}
+  .font-ctl button{width:28px;height:28px;border-radius:50%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);}
+  .font-ctl .pct{font-size:12px;color:var(--text-dim);min-width:38px;text-align:center;font-variant-numeric:tabular-nums;}
   .spacer{flex:1;}
   #wakelock-note{font-size:10px;color:var(--text-dim);}
 
@@ -456,10 +473,12 @@ Volver al sonido 1 = 6"></textarea>
       <span class="pct" id="font-pct">100%</span>
       <button id="font-plus">A+</button>
     </div>
+    <div class="bottom-divider"></div>
     <div class="grp">
       <label>Velocidad</label>
       <input type="range" id="scroll-speed" min="0.4" max="2.5" step="0.1" value="1">
     </div>
+    <div class="bottom-divider"></div>
     <button id="play-btn">▶</button>
     <div class="spacer"></div>
     <span id="wakelock-note"></span>
@@ -1805,6 +1824,43 @@ Volver al sonido 1 = 6"></textarea>
   // recorrer, el scroll siempre termina justo cuando termina la canción.
   // El slider de velocidad (0.4x-2.5x) sigue sirviendo para ajustar a mano
   // en directo si hace falta.
+  // Línea "actual" en directo: en vez de pedirle a Albert que meta a mano un
+  // tiempo por línea (como hace Faristol, con su lista de secciones y
+  // tiempos), aprovechamos que YA sabemos exactamente cuánto scroll hace
+  // falta y cuánto dura la canción — así que en cada frame miramos qué
+  // bloque de letra está más cerca de un punto fijo de la pantalla (el
+  // "ancla", a ~38% de la altura visible) y lo marcamos como actual. Cero
+  // datos nuevos que rellenar canción a canción.
+  const CURRENT_LINE_ANCHOR_FRACTION = 0.38;
+  let currentLineEl = null;
+  let lastHighlightCheck = 0;
+
+  function clearCurrentLineHighlight(){
+    if(currentLineEl){
+      currentLineEl.classList.remove('current-line');
+      currentLineEl = null;
+    }
+  }
+
+  function updateCurrentLineHighlight(){
+    const blocks = lyricsContent.querySelectorAll('.chord-lyric-block');
+    if(!blocks.length) return;
+    const scrollRect = lyricsScroll.getBoundingClientRect();
+    const anchorY = scrollRect.top + scrollRect.height * CURRENT_LINE_ANCHOR_FRACTION;
+    let best = null, bestDist = Infinity;
+    for(const block of blocks){
+      const r = block.getBoundingClientRect();
+      const mid = (r.top + r.bottom) / 2;
+      const dist = Math.abs(mid - anchorY);
+      if(dist < bestDist){ bestDist = dist; best = block; }
+    }
+    if(best && best !== currentLineEl){
+      if(currentLineEl) currentLineEl.classList.remove('current-line');
+      best.classList.add('current-line');
+      currentLineEl = best;
+    }
+  }
+
   function startAutoscroll(){
     const song = songs[currentIndex];
     const totalHeight = lyricsScroll.scrollHeight - lyricsScroll.clientHeight;
@@ -1819,6 +1875,8 @@ Volver al sonido 1 = 6"></textarea>
     let scrollPos = lyricsScroll.scrollTop;
 
     autoscrolling = true;
+    lyricsContent.classList.add('playing');
+    lastHighlightCheck = 0;
     updatePlayButton();
 
     function step(ts){
@@ -1828,6 +1886,13 @@ Volver al sonido 1 = 6"></textarea>
       lastTs = ts;
       scrollPos += pxPerMs * dt;
       lyricsScroll.scrollTop = scrollPos;
+      // No hace falta mirar la línea actual en cada frame (60/s) — con
+      // repasarlo cada ~120ms va de sobra fino y no se nota, y se ahorra
+      // trabajo al iPad en directo.
+      if(ts - lastHighlightCheck > 120){
+        lastHighlightCheck = ts;
+        updateCurrentLineHighlight();
+      }
       if(scrollPos >= lyricsScroll.scrollHeight - lyricsScroll.clientHeight - 2){
         handleAutoscrollComplete();
         return;
@@ -1841,6 +1906,8 @@ Volver al sonido 1 = 6"></textarea>
     autoscrolling = false;
     if(autoscrollRAF) cancelAnimationFrame(autoscrollRAF);
     autoscrollRAF = null;
+    lyricsContent.classList.remove('playing');
+    clearCurrentLineHighlight();
     updatePlayButton();
   }
 
