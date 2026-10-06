@@ -435,7 +435,10 @@ Volver al sonido 1 = 6"></textarea>
         canción de verdad (el grupo tocando, o una grabación) y ve tocando el botón
         grande (o la tecla Intro) justo en el momento en que empieza cada sección. Si
         lo dejas vacío, la canción funciona igual que ahora, con el scroll calculado
-        solo por la duración total.
+        solo por la duración total. También puedes pulsar "Estimar automáticamente"
+        para que calculemos un punto de partida a partir del BPM y los acordes de
+        cada sección — es una aproximación (la app no tiene el audio real), así que
+        conviene revisarla o volver a grabar en directo si al final no encaja bien.
       </div>
       <div id="section-times-list"></div>
       <div id="section-record-panel">
@@ -443,6 +446,7 @@ Volver al sonido 1 = 6"></textarea>
         <span id="section-record-timer">00:00.0</span>
         <button type="button" id="btn-section-mark" class="btn btn-accent hidden">Marcar: <span id="section-mark-next">—</span></button>
         <button type="button" id="btn-section-record-reset" class="btn hidden">Reiniciar cronómetro</button>
+        <button type="button" id="btn-section-estimate" class="btn">✨ Estimar automáticamente</button>
       </div>
     </div>
 
@@ -1112,6 +1116,7 @@ Volver al sonido 1 = 6"></textarea>
   const btnSectionMark = document.getElementById('btn-section-mark');
   const sectionMarkNext = document.getElementById('section-mark-next');
   const btnSectionRecordReset = document.getElementById('btn-section-record-reset');
+  const btnSectionEstimate = document.getElementById('btn-section-estimate');
   const editorPreview = document.getElementById('editor-preview');
   const btnDeleteSong = document.getElementById('btn-delete-song');
 
@@ -1147,9 +1152,9 @@ Volver al sonido 1 = 6"></textarea>
     fPreparedTracks.value = (song && Array.isArray(song.preparedTracks))
       ? song.preparedTracks.join('\n')
       : '';
-    editorSectionTimes = (song && song.sectionTimes && typeof song.sectionTimes === 'object')
-      ? Object.assign({}, song.sectionTimes)
-      : {};
+    editorSectionTimes = (song && Array.isArray(song.sectionTimes))
+      ? song.sectionTimes.slice()
+      : [];
     stopSectionRecording();
     renderSectionTimesList();
 
@@ -1180,7 +1185,14 @@ Volver al sonido 1 = 6"></textarea>
      aparte del resto del formulario (no son inputs normales) porque la
      lista de secciones depende de lo que haya en el campo de letra en
      cada momento, así que se reconstruye cada vez que esta cambia. */
-  let editorSectionTimes = {}; // { "Intro": 12.5, "Verse 1": 38, ... }
+  // Array en vez de objeto por título: muchas canciones repiten el mismo
+  // nombre de sección varias veces (ej. "Coro" x3), y si guardáramos por
+  // texto, marcar un "Coro" marcaría los tres a la vez (eran la misma
+  // clave) — justo el fallo que nos reportó Albert al grabar en directo.
+  // Aquí cada posición del array es una aparición concreta, en el orden en
+  // que sale en la letra: editorSectionTimes[i] = tiempo (o undefined) de
+  // la sección i-ésima de getContentSectionEntries().
+  let editorSectionTimes = []; // [12.5, 38, undefined, 52, ...]
   let sectionRecording = false;
   let sectionRecordStartMs = 0;
   let sectionRecordElapsedMs = 0;
@@ -1206,24 +1218,41 @@ Volver al sonido 1 = 6"></textarea>
       .map(l => l.text);
   }
 
-  function renderSectionTimesList(){
+  // Igual que getContentSectionTitles() pero con una entrada por CADA
+  // aparición (no solo el texto), incluyendo un "label" que distingue
+  // repeticiones del mismo título (p.ej. "Coro (2/3)") para que en la lista
+  // y al grabar se vea claramente cuál de las tres veces se está marcando.
+  function getContentSectionEntries(){
     const titles = getContentSectionTitles();
-    if(!titles.length){
+    const totals = {};
+    titles.forEach(t => { totals[t] = (totals[t] || 0) + 1; });
+    const seen = {};
+    return titles.map((title, idx) => {
+      seen[title] = (seen[title] || 0) + 1;
+      const total = totals[title];
+      const label = total > 1 ? `${title} (${seen[title]}/${total})` : title;
+      return { title, idx, occurrence: seen[title], total, label };
+    });
+  }
+
+  function renderSectionTimesList(){
+    const entries = getContentSectionEntries();
+    if(!entries.length){
       sectionTimesList.innerHTML = '<div id="section-times-empty">Escribe la letra con títulos de sección (## Intro, ## Verse 1...) para poder ponerles tiempo.</div>';
       updateSectionMarkTarget();
       return;
     }
-    // Limpiamos tiempos de secciones que ya no existen en la letra (p.ej.
-    // si se renombró o borró un título), para no arrastrar basura.
-    Object.keys(editorSectionTimes).forEach(t => {
-      if(!titles.includes(t)) delete editorSectionTimes[t];
-    });
-    sectionTimesList.innerHTML = titles.map(title => {
-      const sec = editorSectionTimes[title];
+    // Si la letra ha perdido secciones desde el último render, recortamos
+    // el array a ese tamaño para no arrastrar tiempos de posiciones que ya
+    // no existen (si se han añadido secciones al final, lo grabado antes
+    // para las posiciones que siguen existiendo se conserva tal cual).
+    if(editorSectionTimes.length > entries.length) editorSectionTimes.length = entries.length;
+    sectionTimesList.innerHTML = entries.map(entry => {
+      const sec = editorSectionTimes[entry.idx];
       const hasTime = Number.isFinite(sec);
       const val = hasTime ? formatMMSS(sec) : '';
-      return `<div class="section-time-row${hasTime ? ' marked' : ''}" data-title="${escapeHtml(title)}">
-        <span class="sec-title">${escapeHtml(title)}</span>
+      return `<div class="section-time-row${hasTime ? ' marked' : ''}" data-idx="${entry.idx}">
+        <span class="sec-title">${escapeHtml(entry.label)}</span>
         <input type="text" class="sec-time-input" placeholder="mm:ss" value="${val}">
         <button type="button" class="sec-clear" title="Borrar tiempo">✕</button>
       </div>`;
@@ -1234,13 +1263,13 @@ Volver al sonido 1 = 6"></textarea>
   sectionTimesList.addEventListener('change', (e) => {
     if(!e.target.classList.contains('sec-time-input')) return;
     const row = e.target.closest('.section-time-row');
-    const title = row.dataset.title;
+    const idx = parseInt(row.dataset.idx, 10);
     const sec = parseMMSS(e.target.value);
     if(sec === null){
       if(e.target.value.trim() !== '') showToast('Formato de tiempo no válido — usa mm:ss, por ejemplo 1:05.');
-      delete editorSectionTimes[title];
+      editorSectionTimes[idx] = undefined;
     } else {
-      editorSectionTimes[title] = sec;
+      editorSectionTimes[idx] = sec;
     }
     renderSectionTimesList();
   });
@@ -1248,21 +1277,27 @@ Volver al sonido 1 = 6"></textarea>
   sectionTimesList.addEventListener('click', (e) => {
     if(!e.target.classList.contains('sec-clear')) return;
     const row = e.target.closest('.section-time-row');
-    delete editorSectionTimes[row.dataset.title];
+    editorSectionTimes[parseInt(row.dataset.idx, 10)] = undefined;
     renderSectionTimesList();
   });
 
   // Siguiente sección sin tiempo asignado, en el orden en que aparecen en
   // la letra — es la que se marca al tocar el botón grande o pulsar Intro.
-  function nextUnmarkedSectionTitle(){
-    const titles = getContentSectionTitles();
-    return titles.find(t => !Number.isFinite(editorSectionTimes[t])) || null;
+  // Al ser por posición (no por texto), si hay tres "Coro" solo se da por
+  // marcado el que realmente se ha grabado, y los otros dos siguen pidiendo
+  // su propio tiempo en su momento — sin saltarse ninguno.
+  function nextUnmarkedSectionEntry(){
+    const entries = getContentSectionEntries();
+    for(const entry of entries){
+      if(!Number.isFinite(editorSectionTimes[entry.idx])) return entry;
+    }
+    return null;
   }
 
   function updateSectionMarkTarget(){
-    const next = nextUnmarkedSectionTitle();
+    const next = nextUnmarkedSectionEntry();
     if(next){
-      sectionMarkNext.textContent = next;
+      sectionMarkNext.textContent = next.label;
       btnSectionMark.classList.toggle('hidden', !sectionRecording);
     } else {
       btnSectionMark.classList.add('hidden');
@@ -1304,12 +1339,89 @@ Volver al sonido 1 = 6"></textarea>
 
   function markCurrentSectionTime(){
     if(!sectionRecording) return;
-    const next = nextUnmarkedSectionTitle();
+    const next = nextUnmarkedSectionEntry();
     if(!next) return;
     const elapsedSec = (sectionRecordElapsedMs + (Date.now() - sectionRecordStartMs)) / 1000;
-    editorSectionTimes[next] = elapsedSec;
+    editorSectionTimes[next.idx] = elapsedSec;
     renderSectionTimesList();
   }
+
+  /* ===================== ESTIMACIÓN AUTOMÁTICA (BPM + compases) =====================
+     La app no tiene el audio real de la canción, así que no puede "escuchar"
+     dónde empieza cada parte — pero sí puede hacer un cálculo razonable como
+     punto de partida: cuenta cuántos acordes hay en cada sección (cada
+     corchete [Acorde] cuenta como un compás; un marcador "x4" al final de
+     una línea multiplica el peso de esa línea por 4, típico de intros/riffs
+     instrumentales), lo convierte a segundos según el BPM (asumiendo 4/4:
+     un compás = 4 tiempos = 240/BPM segundos) y luego reescala el resultado
+     para que encaje exactamente con la duración real que ya tiene la
+     canción. Es una aproximación, no una medición — Albert puede ajustar
+     cualquier tiempo a mano después, o volver a grabarlo en directo si una
+     sección concreta no encaja (partes con ritmo libre, adornos, silencios
+     largos... no se pueden adivinar solo contando acordes). */
+  function estimateSectionWeights(){
+    const rawLines = fContent.value.split('\n');
+    const entries = getContentSectionEntries();
+    const weights = entries.map(() => 0);
+    let currentEntryIdx = -1;
+    rawLines.forEach(raw => {
+      if(/^## /.test(raw)){
+        currentEntryIdx++;
+        return;
+      }
+      if(currentEntryIdx < 0) return; // texto antes del primer título (no debería darse, pero por si acaso)
+      const trimmed = raw.trim();
+      if(!trimmed) return;
+      const chordCount = (trimmed.match(/\[[^\]]+\]/g) || []).length;
+      const repeatMatch = trimmed.match(/[x×]\s?(\d+)\s*$/i);
+      const repeat = (repeatMatch && Number.isFinite(parseInt(repeatMatch[1],10)) && parseInt(repeatMatch[1],10) > 0)
+        ? parseInt(repeatMatch[1], 10)
+        : 1;
+      // Toda línea con contenido cuenta al menos 1 compás, aunque no lleve
+      // acordes (p.ej. una nota de letra suelta), para que no desaparezca.
+      weights[currentEntryIdx] += Math.max(1, chordCount) * repeat;
+    });
+    // Una sección sin ninguna línea debajo (título seguido de otro título)
+    // se queda a 0 — le damos un peso mínimo de 1 para que no dure 0s.
+    return weights.map(w => Math.max(1, w));
+  }
+
+  function estimateSectionTimesFromBpm(){
+    const bpm = parseFloat(fBpm.value) || 120;
+    const durationSec = parseDurationSeconds(fDuration.value);
+    const weights = estimateSectionWeights();
+    const secPerBar = 240 / bpm; // 4/4: 4 tiempos por compás
+    const rawSeconds = weights.map(w => w * secPerBar);
+    const rawTotal = rawSeconds.reduce((a,b) => a + b, 0);
+    // Reescalamos para que el total case con la duración real de la
+    // canción (el BPM y los acordes deciden las proporciones ENTRE
+    // secciones; la duración ya conocida decide la escala absoluta).
+    const scale = (rawTotal > 0 && durationSec > 0) ? durationSec / rawTotal : 1;
+    let acc = 0;
+    return rawSeconds.map(s => {
+      const start = acc;
+      acc += s * scale;
+      return start;
+    });
+  }
+
+  function applyEstimatedSectionTimes(){
+    const entries = getContentSectionEntries();
+    if(!entries.length){
+      showToast('Escribe la letra con títulos de sección (## Intro, ## Verse 1...) antes de estimar los tiempos.');
+      return;
+    }
+    if(!parseDurationSeconds(fDuration.value) || !fDuration.value.trim()){
+      showToast('Ponle una duración a la canción (mm:ss) antes de estimar los tiempos.');
+      return;
+    }
+    editorSectionTimes = estimateSectionTimesFromBpm();
+    stopSectionRecording();
+    renderSectionTimesList();
+    showToast('Tiempos estimados a partir del BPM y los acordes — revísalos, son un punto de partida, no el tiempo real.');
+  }
+
+  btnSectionEstimate.addEventListener('click', applyEstimatedSectionTimes);
 
   btnSectionRecordToggle.addEventListener('click', () => {
     if(sectionRecording) pauseSectionRecording(); else startSectionRecording();
@@ -1412,7 +1524,18 @@ Volver al sonido 1 = 6"></textarea>
       chainSelectors: parseChainSelectors(fChainSelectors.value),
       activeTracks: parseActiveTracks(fActiveTracks.value),
       preparedTracks: parseActiveTracks(fPreparedTracks.value),
-      sectionTimes: Object.assign({}, editorSectionTimes),
+      sectionTimes: (() => {
+        // Se guarda como array alineado con las secciones actuales de la
+        // letra (una posición por cada "## Título", repetidos incluidos),
+        // con null donde no se ha grabado tiempo — ver nota junto a
+        // editorSectionTimes más arriba.
+        const n = getContentSectionEntries().length;
+        const arr = [];
+        for(let i = 0; i < n; i++){
+          arr.push(Number.isFinite(editorSectionTimes[i]) ? editorSectionTimes[i] : null);
+        }
+        return arr;
+      })(),
     };
     if(editingIndex !== null){
       songs[editingIndex] = Object.assign({}, songs[editingIndex], data);
@@ -2124,23 +2247,27 @@ Volver al sonido 1 = 6"></textarea>
   }
 
   function buildSectionCheckpoints(song){
-    if(!song || !song.sectionTimes || typeof song.sectionTimes !== 'object') return null;
-    const entries = Object.entries(song.sectionTimes).filter(([,sec]) => Number.isFinite(sec) && sec >= 0);
-    if(!entries.length) return null;
-    const elByTitle = new Map();
-    lyricsContent.querySelectorAll('.section-title').forEach(el => {
-      if(!elByTitle.has(el.textContent)) elByTitle.set(el.textContent, el);
-    });
+    if(!song || !Array.isArray(song.sectionTimes) || !song.sectionTimes.length) return null;
+    // sectionTimes[i] es el tiempo grabado para la sección i-ésima tal
+    // como aparece en la letra (en orden, repeticiones incluidas) — así
+    // que la emparejamos con el elemento .section-title i-ésimo realmente
+    // pintado, por POSICIÓN, no por texto. Si usáramos el texto, tres
+    // "Coro" se confundirían entre sí (eran la misma clave antes — el
+    // fallo que hacía que marcar un Coro marcara los tres a la vez).
+    const titleEls = lyricsContent.querySelectorAll('.section-title');
+    if(!titleEls.length) return null;
     const maxScroll = Math.max(0, lyricsScroll.scrollHeight - lyricsScroll.clientHeight);
     // El "top" que pondría la cabecera de una sección justo arriba del todo
     // del scroll puede superar maxScroll si a esa sección le queda poco
     // contenido debajo (cerca ya del final de la letra) — no se puede
     // scrollear más allá del final aunque la cabecera "pida" más. Lo
     // acotamos a maxScroll para no desbordar el recorrido real.
-    let points = entries
-      .map(([title, sec]) => {
-        const el = elByTitle.get(title);
-        return el ? { sec, top: Math.min(maxScroll, Math.max(0, topWithinLyricsScroll(el))), title } : null;
+    let points = song.sectionTimes
+      .map((sec, idx) => {
+        if(!Number.isFinite(sec) || sec < 0) return null;
+        const el = titleEls[idx];
+        if(!el) return null;
+        return { sec, top: Math.min(maxScroll, Math.max(0, topWithinLyricsScroll(el))), title: el.textContent, idx };
       })
       .filter(Boolean);
     if(!points.length) return null;
@@ -2154,8 +2281,8 @@ Volver al sonido 1 = 6"></textarea>
       if(points[i].top < points[i-1].top) points[i].top = points[i-1].top;
     }
     const durationSec = parseDurationSeconds(song.duration);
-    if(points[0].sec > 0.05) points.unshift({ sec: 0, top: 0, title: null });
-    if(points[points.length - 1].sec < durationSec - 0.05) points.push({ sec: durationSec, top: maxScroll, title: null });
+    if(points[0].sec > 0.05) points.unshift({ sec: 0, top: 0, title: null, idx: -1 });
+    if(points[points.length - 1].sec < durationSec - 0.05) points.push({ sec: durationSec, top: maxScroll, title: null, idx: -1 });
     return points.length >= 2 ? points : null;
   }
 
@@ -2199,22 +2326,30 @@ Volver al sonido 1 = 6"></textarea>
       return;
     }
     sectionsSidebar.classList.add('visible');
-    sectionsSidebar.innerHTML = namedPoints.map(p =>
-      `<button type="button" class="section-nav-item" data-title="${escapeHtml(p.title)}">${escapeHtml(p.title)}<span class="nav-time">${formatMMSS(p.sec)}</span></button>`
-    ).join('');
+    // Igual que en el editor: si una canción repite "Coro" varias veces,
+    // distinguimos cada botón del menú con "(2/3)" etc. — si no, tocar
+    // cualquiera de los tres parecería llevar siempre al mismo sitio.
+    const totals = {};
+    namedPoints.forEach(p => { totals[p.title] = (totals[p.title] || 0) + 1; });
+    const seen = {};
+    sectionsSidebar.innerHTML = namedPoints.map(p => {
+      seen[p.title] = (seen[p.title] || 0) + 1;
+      const label = totals[p.title] > 1 ? `${p.title} (${seen[p.title]}/${totals[p.title]})` : p.title;
+      return `<button type="button" class="section-nav-item" data-idx="${p.idx}">${escapeHtml(label)}<span class="nav-time">${formatMMSS(p.sec)}</span></button>`;
+    }).join('');
   }
 
   sectionsSidebar.addEventListener('click', (e) => {
     const btn = e.target.closest('.section-nav-item');
     if(!btn) return;
-    seekToSection(btn.dataset.title);
+    seekToSection(parseInt(btn.dataset.idx, 10));
   });
 
-  function seekToSection(title){
+  function seekToSection(idx){
     const song = songs[currentIndex];
     const points = song ? buildSectionCheckpoints(song) : null;
     if(!points) return;
-    const target = points.find(p => p.title === title);
+    const target = points.find(p => p.idx === idx);
     if(!target) return;
     const wasPlaying = autoscrolling;
     if(wasPlaying) stopAutoscroll();
@@ -2231,11 +2366,11 @@ Volver al sonido 1 = 6"></textarea>
     const points = song ? buildSectionCheckpoints(song) : null;
     if(!points) return;
     const named = points.filter(p => p.title);
-    let current = null;
+    let currentIdx = null;
     for(const p of named){
-      if(elapsedSec >= p.sec - 0.001) current = p.title;
+      if(elapsedSec >= p.sec - 0.001) currentIdx = p.idx;
     }
-    items.forEach(it => it.classList.toggle('current', it.dataset.title === current));
+    items.forEach(it => it.classList.toggle('current', parseInt(it.dataset.idx, 10) === currentIdx));
   }
 
   function parseDurationSeconds(durationStr){
