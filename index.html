@@ -526,7 +526,7 @@ Volver al sonido 1 = 6"></textarea>
     </div>
     <div class="bottom-divider"></div>
     <div class="grp">
-      <label>Velocidad</label>
+      <label id="scroll-speed-label">Velocidad</label>
       <input type="range" id="scroll-speed" min="0.4" max="2.5" step="0.1" value="1">
     </div>
     <div class="bottom-divider"></div>
@@ -1907,6 +1907,7 @@ Volver al sonido 1 = 6"></textarea>
   metronomeBtn.addEventListener('click', toggleMetronome);
 
   const scrollSpeed = document.getElementById('scroll-speed');
+  const scrollSpeedLabel = document.getElementById('scroll-speed-label');
   const btnLock = document.getElementById('btn-lock');
   const wakelockNote = document.getElementById('wakelock-note');
   const btnChordPhoto = document.getElementById('btn-chord-photo');
@@ -2320,6 +2321,16 @@ Volver al sonido 1 = 6"></textarea>
     const song = songs[currentIndex];
     const points = song ? buildSectionCheckpoints(song) : null;
     const namedPoints = points ? points.filter(p => p.title) : [];
+    // Con puntos de control, el scroll va sincronizado a los segundos
+    // reales de la canción y el control de "Velocidad" no tiene efecto en
+    // ellos (ver startAutoscroll) — lo deshabilitamos y lo dejamos dicho,
+    // para que no parezca que no responde.
+    const hasCheckpoints = !!points;
+    scrollSpeed.disabled = hasCheckpoints;
+    scrollSpeedLabel.textContent = hasCheckpoints ? 'Velocidad (sincronizada)' : 'Velocidad';
+    scrollSpeed.title = hasCheckpoints
+      ? 'Esta canción tiene tiempos de sección grabados/estimados: el scroll sigue los segundos reales de la canción y no se puede acelerar ni ralentizar con este control.'
+      : '';
     if(!namedPoints.length){
       sectionsSidebar.classList.remove('visible');
       sectionsSidebar.innerHTML = '';
@@ -2474,7 +2485,14 @@ Volver al sonido 1 = 6"></textarea>
       const dt = ts - lastTs;
       lastTs = ts;
       if(checkpoints){
-        elapsedMs += dt * speedMultiplier;
+        // Los puntos de control ya están calibrados al tiempo real de la
+        // canción (grabados en directo o estimados por BPM/duración), así
+        // que aquí NO se aplica el multiplicador de "Velocidad": si se
+        // aplicara, la letra dejaría de coincidir con los segundos reales
+        // de la canción (p.ej. un verso que entra a los 0:32 dejaría de
+        // entrar a los 0:32). El control de "Velocidad" solo afecta al
+        // modo antiguo de scroll a ritmo constante (ver el "else" de abajo).
+        elapsedMs += dt;
         scrollPos = scrollTopForElapsed(checkpoints, elapsedMs / 1000);
       } else {
         scrollPos += pxPerMs * dt;
