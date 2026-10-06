@@ -98,6 +98,18 @@
   .color-field input[type=color]{width:44px;height:38px;border:1px solid var(--border);border-radius:8px;background:none;padding:2px;}
   .color-field input[type=text]{width:110px;}
   .help-text{font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;}
+  #section-times-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+  .section-time-row{display:flex;align-items:center;gap:8px;background:var(--panel-2);
+    border:1px solid var(--border);border-radius:8px;padding:6px 10px;}
+  .section-time-row .sec-title{flex:1;font-size:13px;color:var(--text);}
+  .section-time-row input[type=text]{width:72px;text-align:center;padding:4px 6px;
+    border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);}
+  .section-time-row .sec-clear{background:none;border:none;color:var(--text-dim);font-size:15px;cursor:pointer;padding:2px 4px;}
+  .section-time-row.marked{border-color:var(--accent);}
+  #section-times-empty{font-size:12px;color:var(--text-dim);margin-top:8px;}
+  #section-record-panel{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;
+    padding-top:10px;border-top:1px solid var(--border);}
+  #section-record-timer{font-variant-numeric:tabular-nums;font-size:16px;font-weight:700;color:var(--text);min-width:64px;}
   .preview-box{border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--panel-2);margin-top:6px;max-height:320px;overflow-y:auto;}
   .editor-actions{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;
     position:sticky;bottom:0;background:var(--panel);margin:18px -22px 0;padding:14px 22px;
@@ -145,7 +157,17 @@
   #obs-box textarea::placeholder{color:rgba(255,255,255,0.7);}
   #obs-box textarea:focus{outline:none;}
 
-  #lyrics-scroll{flex:1;overflow-y:auto;overflow-x:auto;padding:22px 16px 90px;}
+  #stage-body{flex:1;display:flex;min-height:0;overflow:hidden;}
+  #lyrics-scroll{flex:1;min-width:0;overflow-y:auto;overflow-x:auto;padding:22px 16px 90px;}
+  #sections-sidebar{width:150px;flex:0 0 150px;overflow-y:auto;border-right:1px solid var(--border);
+    background:var(--panel);padding:10px 8px 90px;display:none;}
+  #sections-sidebar.visible{display:block;}
+  .section-nav-item{display:block;width:100%;text-align:left;background:var(--panel-2);
+    border:1px solid var(--border);border-radius:8px;padding:7px 9px;margin-bottom:6px;
+    font-size:12px;line-height:1.3;color:var(--text);}
+  .section-nav-item .nav-time{display:block;font-size:10px;color:var(--text-dim);margin-top:2px;}
+  .section-nav-item.current{background:var(--accent);color:var(--accent-text);border-color:var(--accent);font-weight:700;}
+  .section-nav-item.current .nav-time{color:var(--accent-text);opacity:0.85;}
   /* width:max-content (sin min-width:100%) hace que el bloque se ajuste al
      ancho de su línea más larga, y margin:0 auto lo centra en la pantalla.
      Antes min-width:100% obligaba al bloque a ocupar siempre todo el ancho
@@ -405,6 +427,25 @@ Volver al sonido 1 = 6"></textarea>
       </div>
     </div>
 
+    <div class="field" id="f-section-times-field">
+      <label>Tiempos de las secciones (opcional)</label>
+      <div class="help-text">
+        Para que el scroll en directo se autocorrija en cada cambio de sección en vez
+        de ir desviándose poco a poco. Dale a "Grabar en directo" mientras suena la
+        canción de verdad (el grupo tocando, o una grabación) y ve tocando el botón
+        grande (o la tecla Intro) justo en el momento en que empieza cada sección. Si
+        lo dejas vacío, la canción funciona igual que ahora, con el scroll calculado
+        solo por la duración total.
+      </div>
+      <div id="section-times-list"></div>
+      <div id="section-record-panel">
+        <button type="button" id="btn-section-record-toggle" class="btn">▶ Grabar en directo</button>
+        <span id="section-record-timer">00:00.0</span>
+        <button type="button" id="btn-section-mark" class="btn btn-accent hidden">Marcar: <span id="section-mark-next">—</span></button>
+        <button type="button" id="btn-section-record-reset" class="btn hidden">Reiniciar cronómetro</button>
+      </div>
+    </div>
+
     <div class="field">
       <label>Vista previa</label>
       <div class="preview-box" id="editor-preview"></div>
@@ -466,8 +507,11 @@ Volver al sonido 1 = 6"></textarea>
     <textarea id="obs-text" placeholder="Notas para esta canción (cambios, avisos...)" rows="1"></textarea>
   </div>
 
-  <div id="lyrics-scroll">
-    <div id="lyrics-content"></div>
+  <div id="stage-body">
+    <div id="sections-sidebar"></div>
+    <div id="lyrics-scroll">
+      <div id="lyrics-content"></div>
+    </div>
   </div>
 
   <div id="stage-bottom">
@@ -1062,6 +1106,12 @@ Volver al sonido 1 = 6"></textarea>
   const fChainSelectors = document.getElementById('f-chain-selectors');
   const fActiveTracks = document.getElementById('f-active-tracks');
   const fPreparedTracks = document.getElementById('f-prepared-tracks');
+  const sectionTimesList = document.getElementById('section-times-list');
+  const btnSectionRecordToggle = document.getElementById('btn-section-record-toggle');
+  const sectionRecordTimer = document.getElementById('section-record-timer');
+  const btnSectionMark = document.getElementById('btn-section-mark');
+  const sectionMarkNext = document.getElementById('section-mark-next');
+  const btnSectionRecordReset = document.getElementById('btn-section-record-reset');
   const editorPreview = document.getElementById('editor-preview');
   const btnDeleteSong = document.getElementById('btn-delete-song');
 
@@ -1097,6 +1147,11 @@ Volver al sonido 1 = 6"></textarea>
     fPreparedTracks.value = (song && Array.isArray(song.preparedTracks))
       ? song.preparedTracks.join('\n')
       : '';
+    editorSectionTimes = (song && song.sectionTimes && typeof song.sectionTimes === 'object')
+      ? Object.assign({}, song.sectionTimes)
+      : {};
+    stopSectionRecording();
+    renderSectionTimesList();
 
     btnDeleteSong.classList.toggle('hidden', editingIndex === null);
     updatePreview();
@@ -1105,6 +1160,7 @@ Volver al sonido 1 = 6"></textarea>
   }
 
   function closeEditor(){
+    stopSectionRecording();
     editorOverlay.classList.add('hidden');
     editingIndex = null;
   }
@@ -1112,7 +1168,165 @@ Volver al sonido 1 = 6"></textarea>
   function updatePreview(){
     const parsed = parseContent(fContent.value);
     editorPreview.innerHTML = renderParsedContent(parsed, 0, false) || '<span style="color:var(--text-dim)">Escribe la letra arriba para ver la vista previa.</span>';
+    renderSectionTimesList();
   }
+
+  /* ===================== TIEMPOS DE SECCIÓN (editor) =====================
+     Lista, para la canción que se está editando, los títulos de sección
+     ("## Intro", "## Verse 1"...) ya escritos en la letra, con un tiempo
+     (mm:ss) editable para cada uno. Esos tiempos luego se usan en el
+     escenario para que el autoscroll se recalibre en cada cambio de
+     sección en vez de ir derivando — ver buildSectionCheckpoints(). Viven
+     aparte del resto del formulario (no son inputs normales) porque la
+     lista de secciones depende de lo que haya en el campo de letra en
+     cada momento, así que se reconstruye cada vez que esta cambia. */
+  let editorSectionTimes = {}; // { "Intro": 12.5, "Verse 1": 38, ... }
+  let sectionRecording = false;
+  let sectionRecordStartMs = 0;
+  let sectionRecordElapsedMs = 0;
+  let sectionRecordRAF = null;
+
+  function formatMMSS(totalSec){
+    const s = Math.max(0, totalSec);
+    const m = Math.floor(s / 60);
+    const rem = (s - m * 60);
+    return `${m}:${rem.toFixed(1).padStart(4,'0')}`;
+  }
+
+  function parseMMSS(str){
+    const m = String(str || '').trim().match(/^(\d+):(\d{1,2}(?:\.\d+)?)$/);
+    if(!m) return null;
+    const sec = parseInt(m[1],10) * 60 + parseFloat(m[2]);
+    return Number.isFinite(sec) ? sec : null;
+  }
+
+  function getContentSectionTitles(){
+    return parseContent(fContent.value)
+      .filter(l => l.type === 'header')
+      .map(l => l.text);
+  }
+
+  function renderSectionTimesList(){
+    const titles = getContentSectionTitles();
+    if(!titles.length){
+      sectionTimesList.innerHTML = '<div id="section-times-empty">Escribe la letra con títulos de sección (## Intro, ## Verse 1...) para poder ponerles tiempo.</div>';
+      updateSectionMarkTarget();
+      return;
+    }
+    // Limpiamos tiempos de secciones que ya no existen en la letra (p.ej.
+    // si se renombró o borró un título), para no arrastrar basura.
+    Object.keys(editorSectionTimes).forEach(t => {
+      if(!titles.includes(t)) delete editorSectionTimes[t];
+    });
+    sectionTimesList.innerHTML = titles.map(title => {
+      const sec = editorSectionTimes[title];
+      const hasTime = Number.isFinite(sec);
+      const val = hasTime ? formatMMSS(sec) : '';
+      return `<div class="section-time-row${hasTime ? ' marked' : ''}" data-title="${escapeHtml(title)}">
+        <span class="sec-title">${escapeHtml(title)}</span>
+        <input type="text" class="sec-time-input" placeholder="mm:ss" value="${val}">
+        <button type="button" class="sec-clear" title="Borrar tiempo">✕</button>
+      </div>`;
+    }).join('');
+    updateSectionMarkTarget();
+  }
+
+  sectionTimesList.addEventListener('change', (e) => {
+    if(!e.target.classList.contains('sec-time-input')) return;
+    const row = e.target.closest('.section-time-row');
+    const title = row.dataset.title;
+    const sec = parseMMSS(e.target.value);
+    if(sec === null){
+      if(e.target.value.trim() !== '') showToast('Formato de tiempo no válido — usa mm:ss, por ejemplo 1:05.');
+      delete editorSectionTimes[title];
+    } else {
+      editorSectionTimes[title] = sec;
+    }
+    renderSectionTimesList();
+  });
+
+  sectionTimesList.addEventListener('click', (e) => {
+    if(!e.target.classList.contains('sec-clear')) return;
+    const row = e.target.closest('.section-time-row');
+    delete editorSectionTimes[row.dataset.title];
+    renderSectionTimesList();
+  });
+
+  // Siguiente sección sin tiempo asignado, en el orden en que aparecen en
+  // la letra — es la que se marca al tocar el botón grande o pulsar Intro.
+  function nextUnmarkedSectionTitle(){
+    const titles = getContentSectionTitles();
+    return titles.find(t => !Number.isFinite(editorSectionTimes[t])) || null;
+  }
+
+  function updateSectionMarkTarget(){
+    const next = nextUnmarkedSectionTitle();
+    if(next){
+      sectionMarkNext.textContent = next;
+      btnSectionMark.classList.toggle('hidden', !sectionRecording);
+    } else {
+      btnSectionMark.classList.add('hidden');
+    }
+  }
+
+  function sectionRecordTick(){
+    if(!sectionRecording) return;
+    const elapsed = sectionRecordElapsedMs + (Date.now() - sectionRecordStartMs);
+    sectionRecordTimer.textContent = formatMMSS(elapsed / 1000);
+    sectionRecordRAF = requestAnimationFrame(sectionRecordTick);
+  }
+
+  function startSectionRecording(){
+    sectionRecording = true;
+    sectionRecordStartMs = Date.now();
+    btnSectionRecordToggle.textContent = '⏸ Pausar';
+    btnSectionRecordReset.classList.remove('hidden');
+    updateSectionMarkTarget();
+    sectionRecordTick();
+  }
+
+  function pauseSectionRecording(){
+    if(!sectionRecording) return;
+    sectionRecordElapsedMs += (Date.now() - sectionRecordStartMs);
+    sectionRecording = false;
+    if(sectionRecordRAF) cancelAnimationFrame(sectionRecordRAF);
+    sectionRecordRAF = null;
+    btnSectionRecordToggle.textContent = '▶ Grabar en directo';
+    btnSectionMark.classList.add('hidden');
+  }
+
+  function stopSectionRecording(){
+    pauseSectionRecording();
+    sectionRecordElapsedMs = 0;
+    sectionRecordTimer.textContent = '00:00.0';
+    btnSectionRecordReset.classList.add('hidden');
+  }
+
+  function markCurrentSectionTime(){
+    if(!sectionRecording) return;
+    const next = nextUnmarkedSectionTitle();
+    if(!next) return;
+    const elapsedSec = (sectionRecordElapsedMs + (Date.now() - sectionRecordStartMs)) / 1000;
+    editorSectionTimes[next] = elapsedSec;
+    renderSectionTimesList();
+  }
+
+  btnSectionRecordToggle.addEventListener('click', () => {
+    if(sectionRecording) pauseSectionRecording(); else startSectionRecording();
+  });
+  btnSectionRecordReset.addEventListener('click', stopSectionRecording);
+  btnSectionMark.addEventListener('click', markCurrentSectionTime);
+  // Atajo de teclado tipo Faristol: con el editor abierto y la grabación en
+  // marcha, Intro marca la sección actual sin tener que levantar el dedo
+  // del teclado/instrumento para ir a tocar el botón en pantalla.
+  document.addEventListener('keydown', (e) => {
+    if(e.key !== 'Enter') return;
+    if(editorOverlay.classList.contains('hidden')) return;
+    if(!sectionRecording) return;
+    if(e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) return;
+    e.preventDefault();
+    markCurrentSectionTime();
+  });
 
   function isValidHex(v){
     return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim());
@@ -1198,6 +1412,7 @@ Volver al sonido 1 = 6"></textarea>
       chainSelectors: parseChainSelectors(fChainSelectors.value),
       activeTracks: parseActiveTracks(fActiveTracks.value),
       preparedTracks: parseActiveTracks(fPreparedTracks.value),
+      sectionTimes: Object.assign({}, editorSectionTimes),
     };
     if(editingIndex !== null){
       songs[editingIndex] = Object.assign({}, songs[editingIndex], data);
@@ -1574,6 +1789,7 @@ Volver al sonido 1 = 6"></textarea>
   const btnChordPhoto = document.getElementById('btn-chord-photo');
   const chordPhotoInput = document.getElementById('chord-photo-input');
   const ocrOverlay = document.getElementById('ocr-overlay');
+  const sectionsSidebar = document.getElementById('sections-sidebar');
 
   let currentIndex = 0;
   let currentTranspose = 0;
@@ -1640,6 +1856,7 @@ Volver al sonido 1 = 6"></textarea>
     // — no hay que volver a pintarla aquí, o se perdería visualmente el
     // transporte guardado aunque el número de arriba siga mostrándolo bien.
     updateTransposeLabel();
+    renderSectionsSidebar();
 
     obsText.value = song.observations || '';
     autoResizeObs();
@@ -1884,6 +2101,143 @@ Volver al sonido 1 = 6"></textarea>
   let autoscrollRAF = null;
   let autoscrolling = false;
 
+  /* ===================== SECCIONES Y AUTOCORRECCIÓN DEL SCROLL =====================
+     Si la canción tiene tiempos de sección grabados (song.sectionTimes, ver
+     el editor), construimos una lista de "puntos de control": por cada
+     título marcado, buscamos su elemento .section-title real ya pintado en
+     pantalla y anotamos a qué altura de scroll está. Entre dos puntos de
+     control consecutivos interpolamos linealmente igual que antes, pero el
+     scroll se "recalibra" en cada punto en vez de arrastrar el error de
+     principio a fin — así una sección que dura más o menos de lo calculado
+     ya no desincroniza el resto de la canción. Las canciones sin tiempos
+     grabados siguen funcionando exactamente igual que antes (duración
+     total / altura total, sin puntos de control). */
+  // El offsetTop "de libro" de un elemento se mide desde su offsetParent, que
+  // es el ancestro posicionado más cercano — en nuestro caso #stage (position:
+  // fixed), NO #lyrics-scroll. Eso metía de más la altura de la cabecera del
+  // escenario en cada punto de control y descuadraba el scroll respecto al
+  // recorrido real (0..maxScroll) de #lyrics-scroll. Medimos en su lugar la
+  // posición real dentro del propio contenedor con scroll, usando el
+  // rectángulo en pantalla (válido sea cual sea la posición de scroll actual).
+  function topWithinLyricsScroll(el){
+    return el.getBoundingClientRect().top - lyricsScroll.getBoundingClientRect().top + lyricsScroll.scrollTop;
+  }
+
+  function buildSectionCheckpoints(song){
+    if(!song || !song.sectionTimes || typeof song.sectionTimes !== 'object') return null;
+    const entries = Object.entries(song.sectionTimes).filter(([,sec]) => Number.isFinite(sec) && sec >= 0);
+    if(!entries.length) return null;
+    const elByTitle = new Map();
+    lyricsContent.querySelectorAll('.section-title').forEach(el => {
+      if(!elByTitle.has(el.textContent)) elByTitle.set(el.textContent, el);
+    });
+    const maxScroll = Math.max(0, lyricsScroll.scrollHeight - lyricsScroll.clientHeight);
+    // El "top" que pondría la cabecera de una sección justo arriba del todo
+    // del scroll puede superar maxScroll si a esa sección le queda poco
+    // contenido debajo (cerca ya del final de la letra) — no se puede
+    // scrollear más allá del final aunque la cabecera "pida" más. Lo
+    // acotamos a maxScroll para no desbordar el recorrido real.
+    let points = entries
+      .map(([title, sec]) => {
+        const el = elByTitle.get(title);
+        return el ? { sec, top: Math.min(maxScroll, Math.max(0, topWithinLyricsScroll(el))), title } : null;
+      })
+      .filter(Boolean);
+    if(!points.length) return null;
+    points.sort((a,b) => a.sec - b.sec);
+    points = points.filter((p,i) => i === 0 || p.sec > points[i-1].sec);
+    // Nos aseguramos de que el scroll nunca retroceda de un punto de control
+    // al siguiente (podría pasar si una sección posterior, por poco texto,
+    // "pide" una altura de scroll menor que la anterior) — en directo un
+    // salto de scroll hacia atrás se vería como un fallo.
+    for(let i = 1; i < points.length; i++){
+      if(points[i].top < points[i-1].top) points[i].top = points[i-1].top;
+    }
+    const durationSec = parseDurationSeconds(song.duration);
+    if(points[0].sec > 0.05) points.unshift({ sec: 0, top: 0, title: null });
+    if(points[points.length - 1].sec < durationSec - 0.05) points.push({ sec: durationSec, top: maxScroll, title: null });
+    return points.length >= 2 ? points : null;
+  }
+
+  function scrollTopForElapsed(points, elapsedSec){
+    if(elapsedSec <= points[0].sec) return points[0].top;
+    for(let i = 1; i < points.length; i++){
+      if(elapsedSec <= points[i].sec){
+        const a = points[i-1], b = points[i];
+        const span = b.sec - a.sec;
+        const frac = span > 0 ? (elapsedSec - a.sec) / span : 1;
+        return a.top + (b.top - a.top) * frac;
+      }
+    }
+    return points[points.length - 1].top;
+  }
+
+  function elapsedForScrollTop(points, top){
+    if(top <= points[0].top) return points[0].sec;
+    for(let i = 1; i < points.length; i++){
+      if(top <= points[i].top){
+        const a = points[i-1], b = points[i];
+        const span = b.top - a.top;
+        const frac = span > 0 ? (top - a.top) / span : 1;
+        return a.sec + (b.sec - a.sec) * frac;
+      }
+    }
+    return points[points.length - 1].sec;
+  }
+
+  // Menú lateral de secciones en el escenario: solo se muestra si la
+  // canción tiene al menos un tiempo de sección grabado. Tocar una sección
+  // salta el scroll ahí mismo, y si el autoscroll está en marcha lo
+  // reinicia desde ese punto (útil para saltarte una parte en directo).
+  function renderSectionsSidebar(){
+    const song = songs[currentIndex];
+    const points = song ? buildSectionCheckpoints(song) : null;
+    const namedPoints = points ? points.filter(p => p.title) : [];
+    if(!namedPoints.length){
+      sectionsSidebar.classList.remove('visible');
+      sectionsSidebar.innerHTML = '';
+      return;
+    }
+    sectionsSidebar.classList.add('visible');
+    sectionsSidebar.innerHTML = namedPoints.map(p =>
+      `<button type="button" class="section-nav-item" data-title="${escapeHtml(p.title)}">${escapeHtml(p.title)}<span class="nav-time">${formatMMSS(p.sec)}</span></button>`
+    ).join('');
+  }
+
+  sectionsSidebar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.section-nav-item');
+    if(!btn) return;
+    seekToSection(btn.dataset.title);
+  });
+
+  function seekToSection(title){
+    const song = songs[currentIndex];
+    const points = song ? buildSectionCheckpoints(song) : null;
+    if(!points) return;
+    const target = points.find(p => p.title === title);
+    if(!target) return;
+    const wasPlaying = autoscrolling;
+    if(wasPlaying) stopAutoscroll();
+    lyricsScroll.scrollTop = target.top;
+    updateCurrentLineHighlight();
+    updateSectionSidebarHighlight(target.sec);
+    if(wasPlaying) startAutoscroll();
+  }
+
+  function updateSectionSidebarHighlight(elapsedSec){
+    const items = sectionsSidebar.querySelectorAll('.section-nav-item');
+    if(!items.length) return;
+    const song = songs[currentIndex];
+    const points = song ? buildSectionCheckpoints(song) : null;
+    if(!points) return;
+    const named = points.filter(p => p.title);
+    let current = null;
+    for(const p of named){
+      if(elapsedSec >= p.sec - 0.001) current = p.title;
+    }
+    items.forEach(it => it.classList.toggle('current', it.dataset.title === current));
+  }
+
   function parseDurationSeconds(durationStr){
     if(!durationStr) return 180; // fallback: 3 min
     const m = String(durationStr).match(/^(\d+):(\d{2})$/);
@@ -1958,11 +2312,21 @@ Volver al sonido 1 = 6"></textarea>
     const speedMultiplier = parseFloat(scrollSpeed.value) || 1;
     const durationSec = parseDurationSeconds(song && song.duration);
     const pxPerMs = (totalHeight / (durationSec * 1000)) * speedMultiplier;
+    // Si la canción tiene tiempos de sección grabados, usamos esos puntos de
+    // control para recalcular la posición tramo a tramo (ver
+    // buildSectionCheckpoints) en vez de una velocidad constante de
+    // principio a fin — así no se va desincronizando. Si no hay puntos de
+    // control, todo sigue exactamente igual que antes.
+    const checkpoints = buildSectionCheckpoints(song);
     let lastTs = null;
     // Acumulamos la posición en una variable float aparte: scrollTop del DOM
     // se redondea a entero en cada lectura, y con incrementos por debajo de
     // 1px por frame (habitual a velocidad normal) el scroll nunca avanzaba.
     let scrollPos = lyricsScroll.scrollTop;
+    // Reloj virtual (en ms) usado solo en modo con puntos de control: al
+    // (re)arrancar, lo inferimos a partir de dónde esté ya el scroll, así
+    // un play tras una pausa o un salto manual continúa desde ahí.
+    let elapsedMs = checkpoints ? elapsedForScrollTop(checkpoints, scrollPos) * 1000 : 0;
 
     autoscrolling = true;
     lyricsContent.classList.add('playing');
@@ -1974,7 +2338,12 @@ Volver al sonido 1 = 6"></textarea>
       if(lastTs === null) lastTs = ts;
       const dt = ts - lastTs;
       lastTs = ts;
-      scrollPos += pxPerMs * dt;
+      if(checkpoints){
+        elapsedMs += dt * speedMultiplier;
+        scrollPos = scrollTopForElapsed(checkpoints, elapsedMs / 1000);
+      } else {
+        scrollPos += pxPerMs * dt;
+      }
       lyricsScroll.scrollTop = scrollPos;
       // No hace falta mirar la línea actual en cada frame (60/s) — con
       // repasarlo cada ~120ms va de sobra fino y no se nota, y se ahorra
@@ -1982,6 +2351,7 @@ Volver al sonido 1 = 6"></textarea>
       if(ts - lastHighlightCheck > 120){
         lastHighlightCheck = ts;
         updateCurrentLineHighlight();
+        if(checkpoints) updateSectionSidebarHighlight(elapsedMs / 1000);
       }
       if(scrollPos >= lyricsScroll.scrollHeight - lyricsScroll.clientHeight - 2){
         handleAutoscrollComplete();
