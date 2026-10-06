@@ -190,6 +190,9 @@
   #play-btn{width:46px;height:46px;border-radius:50%;background:var(--accent);color:var(--accent-text);
     border:none;font-size:17px;display:flex;align-items:center;justify-content:center;
     box-shadow:0 2px 8px rgba(0,0,0,0.18);}
+  #metronome-btn{width:34px;height:34px;border-radius:50%;background:var(--panel-2);color:var(--text);
+    border:1px solid var(--border);display:flex;align-items:center;justify-content:center;margin-left:-2px;}
+  #metronome-btn.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent);}
   .bottom-divider{width:1px;align-self:stretch;background:var(--border);margin:4px 2px;}
   .font-ctl{display:flex;align-items:center;gap:6px;}
   .font-ctl button{width:28px;height:28px;border-radius:50%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);}
@@ -480,6 +483,14 @@ Volver al sonido 1 = 6"></textarea>
     </div>
     <div class="bottom-divider"></div>
     <button id="play-btn">▶</button>
+    <button id="metronome-btn" title="Metrónomo (clic al tempo de la canción, según el bpm)" aria-label="Metrónomo">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 21h8"/>
+        <path d="M10.5 21 7 6l2-3h6l2 3-3.5 15"/>
+        <path d="M9.2 14.5 14 8"/>
+        <circle cx="12" cy="7.2" r="1" fill="currentColor" stroke="none"/>
+      </svg>
+    </button>
     <div class="spacer"></div>
     <span id="wakelock-note"></span>
   </div>
@@ -1492,6 +1503,71 @@ Volver al sonido 1 = 6"></textarea>
   const obsText = document.getElementById('obs-text');
   const fontPct = document.getElementById('font-pct');
   const playBtn = document.getElementById('play-btn');
+  const metronomeBtn = document.getElementById('metronome-btn');
+  let metroAudioCtx = null;
+  let metroOn = false;
+  let metroTimerId = null;
+  let metroNextTickTime = 0;
+  let metroBeatCount = 0;
+  const METRO_LOOKAHEAD_MS = 25;
+  const METRO_SCHEDULE_AHEAD_SEC = 0.12;
+
+  function metroScheduleTick(time, accent){
+    const ctx = metroAudioCtx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = accent ? 1600 : 1000;
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(accent ? 0.4 : 0.22, time + 0.001);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.045);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(time);
+    osc.stop(time + 0.05);
+  }
+
+  function metroScheduler(){
+    const song = songs[currentIndex];
+    const bpm = parseFloat(song && song.bpm);
+    if(!bpm || bpm <= 0){ stopMetronome(); return; }
+    const secPerBeat = 60 / bpm;
+    const tsMatch = String(song && song.timeSignature || '').match(/^\s*(\d+)\s*\/\s*\d+\s*$/);
+    const beatsPerBar = tsMatch ? Math.max(1, parseInt(tsMatch[1], 10)) : 4;
+    while(metroNextTickTime < metroAudioCtx.currentTime + METRO_SCHEDULE_AHEAD_SEC){
+      metroScheduleTick(metroNextTickTime, metroBeatCount % beatsPerBar === 0);
+      metroNextTickTime += secPerBeat;
+      metroBeatCount++;
+    }
+  }
+
+  function startMetronome(){
+    const song = songs[currentIndex];
+    const bpm = parseFloat(song && song.bpm);
+    if(!bpm || bpm <= 0){
+      showToast('Esta canción no tiene BPM guardado — ponlo en el editor para poder usar el metrónomo.');
+      return;
+    }
+    if(!metroAudioCtx){ metroAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    if(metroAudioCtx.state === 'suspended'){ metroAudioCtx.resume(); }
+    metroBeatCount = 0;
+    metroNextTickTime = metroAudioCtx.currentTime + 0.05;
+    metroOn = true;
+    metronomeBtn.classList.add('active');
+    metroScheduler();
+    metroTimerId = setInterval(metroScheduler, METRO_LOOKAHEAD_MS);
+  }
+
+  function stopMetronome(){
+    metroOn = false;
+    if(metroTimerId){ clearInterval(metroTimerId); metroTimerId = null; }
+    metronomeBtn.classList.remove('active');
+  }
+
+  function toggleMetronome(){
+    if(metroOn) stopMetronome(); else startMetronome();
+  }
+  metronomeBtn.addEventListener('click', toggleMetronome);
+
   const scrollSpeed = document.getElementById('scroll-speed');
   const btnLock = document.getElementById('btn-lock');
   const wakelockNote = document.getElementById('wakelock-note');
@@ -1518,6 +1594,7 @@ Volver al sonido 1 = 6"></textarea>
 
   function closeStage(){
     stopAutoscroll();
+    stopMetronome();
     releaseWakeLock();
     stageEl.classList.add('hidden');
     document.body.style.overflow = '';
@@ -1528,6 +1605,7 @@ Volver al sonido 1 = 6"></textarea>
     const song = songs[currentIndex];
     if(!song) return;
     stopAutoscroll();
+    stopMetronome();
 
     stageTitleEl.textContent = song.title || 'Sense títol';
     stageArtistEl.textContent = song.artist || '—';
@@ -1831,7 +1909,7 @@ Volver al sonido 1 = 6"></textarea>
   // bloque de letra está más cerca de un punto fijo de la pantalla (el
   // "ancla", a ~38% de la altura visible) y lo marcamos como actual. Cero
   // datos nuevos que rellenar canción a canción.
-  const CURRENT_LINE_ANCHOR_FRACTION = 0.38;
+  const CURRENT_LINE_ANCHOR_FRACTION = 0.22;
   let currentLineEl = null;
   let lastHighlightCheck = 0;
 
@@ -1845,6 +1923,18 @@ Volver al sonido 1 = 6"></textarea>
   function updateCurrentLineHighlight(){
     const blocks = lyricsContent.querySelectorAll('.chord-lyric-block');
     if(!blocks.length) return;
+    // Forzamos el primer bloque (normalmente la Intro) mientras apenas se ha
+    // hecho scroll — arregla el fallo de que una Intro corta se saltaba
+    // directamente al Verse 1 desde el fotograma 1.
+    if(lyricsScroll.scrollTop < 8){
+      const first = blocks[0];
+      if(first !== currentLineEl){
+        if(currentLineEl) currentLineEl.classList.remove('current-line');
+        first.classList.add('current-line');
+        currentLineEl = first;
+      }
+      return;
+    }
     const scrollRect = lyricsScroll.getBoundingClientRect();
     const anchorY = scrollRect.top + scrollRect.height * CURRENT_LINE_ANCHOR_FRACTION;
     let best = null, bestDist = Infinity;
