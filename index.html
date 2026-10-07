@@ -968,8 +968,16 @@ Volver al sonido 1 = 6"></textarea>
 
   function renderParsedContent(parsedLines, semitoneOffset, preferFlats){
     let html = '';
+    // Vamos contando en qué sección estamos (misma numeración y mismo orden
+    // que usa buildSectionCheckpoints para emparejar sectionTimes con los
+    // ".section-title" pintados) y etiquetamos cada bloque de letra con su
+    // sección, para poder restringir luego la búsqueda de "línea actual" a
+    // la sección que de verdad toca por tiempo real (ver
+    // updateCurrentLineHighlight) en vez de a todo el documento.
+    let sectionIdx = -1;
     for(const line of parsedLines){
       if(line.type === 'header'){
+        sectionIdx++;
         html += `<div class="section-title">${escapeHtml(line.text)}</div>`;
       } else if(line.type === 'blank'){
         html += `<div class="blank-line"></div>`;
@@ -977,7 +985,7 @@ Volver al sonido 1 = 6"></textarea>
         const { chordLine, lyricLine, hasChords } = buildChordLyricLines(line.segments, semitoneOffset, preferFlats);
         const trimmedLyric = lyricLine.trim();
         const isRepeatMarker = hasChords && REPEAT_MARKER_RE.test(trimmedLyric);
-        html += `<div class="chord-lyric-block">`;
+        html += `<div class="chord-lyric-block" data-section-idx="${sectionIdx}">`;
         if(hasChords){
           const chordLineOut = isRepeatMarker
             ? chordLine.replace(/\s+$/, '') + '  ' + trimmedLyric
@@ -2282,7 +2290,19 @@ Volver al sonido 1 = 6"></textarea>
       if(points[i].top < points[i-1].top) points[i].top = points[i-1].top;
     }
     const durationSec = parseDurationSeconds(song.duration);
-    if(points[0].sec > 0.05) points.unshift({ sec: 0, top: 0, title: null, idx: -1 });
+    if(points[0].sec > 0.05){
+      points.unshift({ sec: 0, top: 0, title: null, idx: -1 });
+    } else {
+      // La primera sección ya empieza en el segundo 0 (p.ej. no hay
+      // "Intro" y la letra arranca directamente con "Verse 1"). El título
+      // de esa sección casi nunca mide top=0 exacto (el contenedor de la
+      // letra suele tener algo de padding/margen arriba), así que sin
+      // esto el autoscroll arrancaría ya ligeramente desplazado hacia
+      // abajo desde el primer instante — en una canción corta eso puede
+      // llegar a tapar la primera línea entera. En el segundo 0 todavía
+      // no ha pasado nada: el scroll siempre debe arrancar en top=0 real.
+      points[0] = { ...points[0], top: 0 };
+    }
     if(points[points.length - 1].sec < durationSec - 0.05) points.push({ sec: durationSec, top: maxScroll, title: null, idx: -1 });
     return points.length >= 2 ? points : null;
   }
@@ -2365,7 +2385,7 @@ Volver al sonido 1 = 6"></textarea>
     const wasPlaying = autoscrolling;
     if(wasPlaying) stopAutoscroll();
     lyricsScroll.scrollTop = target.top;
-    updateCurrentLineHighlight();
+    updateCurrentLineHighlight(points, target.sec);
     updateSectionSidebarHighlight(target.sec);
     if(wasPlaying) startAutoscroll();
   }
@@ -2420,14 +2440,34 @@ Volver al sonido 1 = 6"></textarea>
     }
   }
 
-  function updateCurrentLineHighlight(){
-    const blocks = lyricsContent.querySelectorAll('.chord-lyric-block');
-    if(!blocks.length) return;
-    // Forzamos el primer bloque (normalmente la Intro) mientras apenas se ha
-    // hecho scroll — arregla el fallo de que una Intro corta se saltaba
-    // directamente al Verse 1 desde el fotograma 1.
-    if(lyricsScroll.scrollTop < 8){
-      const first = blocks[0];
+  function updateCurrentLineHighlight(checkpoints, elapsedSec){
+    const allBlocks = lyricsContent.querySelectorAll('.chord-lyric-block');
+    if(!allBlocks.length) return;
+
+    let blocks = allBlocks;
+    if(checkpoints && Number.isFinite(elapsedSec)){
+      // Con tiempos de sección sabemos EXACTAMENTE en qué sección estamos
+      // por tiempo real (el mismo cálculo que usa el menú lateral) —
+      // restringimos la búsqueda de "línea actual" a los bloques de ESA
+      // sección. Sin esto, el ancla fijo de aviso (ver
+      // CURRENT_LINE_ANCHOR_FRACTION, un % fijo de la pantalla) puede caer
+      // ya dentro de la sección siguiente aunque en tiempo real todavía
+      // falten muchos segundos para llegar a ella — pasaba sobre todo con
+      // una sección muy corta (p.ej. una Intro de una sola línea de
+      // acordes): el ancla "veía" el Verse 1 casi desde el segundo 0,
+      // aunque el propio scroll sí avanzaba a la velocidad correcta.
+      let currentSectionIdx = null;
+      for(const p of checkpoints){
+        if(p.idx >= 0 && elapsedSec >= p.sec - 0.001) currentSectionIdx = p.idx;
+      }
+      if(currentSectionIdx !== null){
+        const restricted = lyricsContent.querySelectorAll(`.chord-lyric-block[data-section-idx="${currentSectionIdx}"]`);
+        if(restricted.length) blocks = restricted;
+      }
+    } else if(lyricsScroll.scrollTop < 8){
+      // Sin tiempos de sección (modo antiguo, sin checkpoints): seguimos
+      // forzando el primer bloque mientras apenas se ha hecho scroll.
+      const first = allBlocks[0];
       if(first !== currentLineEl){
         if(currentLineEl) currentLineEl.classList.remove('current-line');
         first.classList.add('current-line');
@@ -2503,7 +2543,7 @@ Volver al sonido 1 = 6"></textarea>
       // trabajo al iPad en directo.
       if(ts - lastHighlightCheck > 120){
         lastHighlightCheck = ts;
-        updateCurrentLineHighlight();
+        updateCurrentLineHighlight(checkpoints, elapsedMs / 1000);
         if(checkpoints) updateSectionSidebarHighlight(elapsedMs / 1000);
       }
       if(scrollPos >= lyricsScroll.scrollHeight - lyricsScroll.clientHeight - 2){
