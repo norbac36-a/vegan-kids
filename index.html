@@ -2444,26 +2444,43 @@ Volver al sonido 1 = 6"></textarea>
     const allBlocks = lyricsContent.querySelectorAll('.chord-lyric-block');
     if(!allBlocks.length) return;
 
-    let blocks = allBlocks;
     if(checkpoints && Number.isFinite(elapsedSec)){
       // Con tiempos de sección sabemos EXACTAMENTE en qué sección estamos
-      // por tiempo real (el mismo cálculo que usa el menú lateral) —
-      // restringimos la búsqueda de "línea actual" a los bloques de ESA
-      // sección. Sin esto, el ancla fijo de aviso (ver
-      // CURRENT_LINE_ANCHOR_FRACTION, un % fijo de la pantalla) puede caer
-      // ya dentro de la sección siguiente aunque en tiempo real todavía
-      // falten muchos segundos para llegar a ella — pasaba sobre todo con
-      // una sección muy corta (p.ej. una Intro de una sola línea de
-      // acordes): el ancla "veía" el Verse 1 casi desde el segundo 0,
-      // aunque el propio scroll sí avanzaba a la velocidad correcta.
-      let currentSectionIdx = null;
-      for(const p of checkpoints){
-        if(p.idx >= 0 && elapsedSec >= p.sec - 0.001) currentSectionIdx = p.idx;
+      // por tiempo real (el mismo cálculo que usa el menú lateral), y
+      // cuánto dura esa sección (hasta el siguiente punto de control). En
+      // vez de buscar qué línea cae más cerca de un punto fijo de la
+      // pantalla (fallaba: nada más entrar en una sección con pocas líneas
+      // muy juntas, ese punto fijo ya caía pasada la primera o incluso
+      // más allá, "robando" el salto a media sección desde el primer
+      // instante), repartimos las líneas de la sección proporcionalmente
+      // a lo largo de su tiempo real: al entrar (0% del tiempo de la
+      // sección) se marca la primera línea, y se va avanzando línea a
+      // línea según pasa el tiempo real asignado a esa sección.
+      let curPos = -1;
+      for(let i = 0; i < checkpoints.length; i++){
+        if(checkpoints[i].idx >= 0 && elapsedSec >= checkpoints[i].sec - 0.001) curPos = i;
       }
-      if(currentSectionIdx !== null){
-        const restricted = lyricsContent.querySelectorAll(`.chord-lyric-block[data-section-idx="${currentSectionIdx}"]`);
-        if(restricted.length) blocks = restricted;
+      if(curPos >= 0){
+        const cur = checkpoints[curPos];
+        const next = checkpoints[curPos + 1];
+        const sectionBlocks = lyricsContent.querySelectorAll(`.chord-lyric-block[data-section-idx="${cur.idx}"]`);
+        if(sectionBlocks.length){
+          const span = next ? Math.max(0.001, next.sec - cur.sec) : 0.001;
+          const frac = next ? Math.min(1, Math.max(0, (elapsedSec - cur.sec) / span)) : 0;
+          let blockIdx = Math.floor(frac * sectionBlocks.length);
+          if(blockIdx >= sectionBlocks.length) blockIdx = sectionBlocks.length - 1;
+          const best = sectionBlocks[blockIdx];
+          if(best !== currentLineEl){
+            if(currentLineEl) currentLineEl.classList.remove('current-line');
+            best.classList.add('current-line');
+            currentLineEl = best;
+          }
+          return;
+        }
       }
+      // Si la sección actual no tiene ningún bloque (caso raro, p.ej. una
+      // sección vacía), seguimos abajo con la búsqueda antigua por ancla
+      // como red de seguridad, sobre todos los bloques.
     } else if(lyricsScroll.scrollTop < 8){
       // Sin tiempos de sección (modo antiguo, sin checkpoints): seguimos
       // forzando el primer bloque mientras apenas se ha hecho scroll.
@@ -2475,6 +2492,7 @@ Volver al sonido 1 = 6"></textarea>
       }
       return;
     }
+    const blocks = allBlocks;
     const scrollRect = lyricsScroll.getBoundingClientRect();
     const anchorY = scrollRect.top + scrollRect.height * CURRENT_LINE_ANCHOR_FRACTION;
     let best = null, bestDist = Infinity;
