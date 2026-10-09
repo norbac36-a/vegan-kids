@@ -195,6 +195,20 @@
   #lyrics-content.playing .chord-lyric-block.current-line .lyric-line-text{font-size:1.3em;}
   #lyrics-content.playing .chord-lyric-block.current-line .lyric-line-text{opacity:1;font-weight:700;color:var(--text);}
 
+  /* Modo "solo acordes": oculta la letra y deja solo los acordes, más
+     compacto (sin huecos donde iría la letra, ni líneas en blanco, ni
+     bloques que no tuvieran ningún acorde de todas formas). Los mismos
+     elementos del DOM y las mismas posiciones de ".section-title" se
+     mantienen intactas para no tocar el sistema de sincronización
+     (buildSectionCheckpoints / resaltado de línea actual) — simplemente se
+     visten distinto. */
+  #lyrics-content.chords-only .lyric-line-text,
+  #lyrics-content.chords-only .blank-line,
+  #lyrics-content.chords-only .chord-lyric-block[data-has-chords="0"]{display:none;}
+  #lyrics-content.chords-only .chord-lyric-block{margin-bottom:12px;}
+  #lyrics-content.chords-only .chord-line{font-size:1.2em;}
+  #lyrics-content.chords-only.playing .chord-lyric-block.current-line .chord-line{font-size:1.5em;}
+
   #stage-bottom{flex:0 0 auto;border-top:1px solid var(--border);background:var(--panel);
     padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
   #stage-bottom .grp{display:flex;align-items:center;gap:8px;}
@@ -480,6 +494,7 @@ Volver al sonido 1 = 6"></textarea>
         </div>
       </div>
       <div class="icon-row">
+        <button class="icon-btn" id="btn-chords-only" title="Mostrar solo acordes (sin letra)">🎸</button>
         <button class="icon-btn" id="btn-edit-current" title="Editar">✎</button>
         <button class="icon-btn" id="btn-chord-photo" title="Foto de acordes">📷</button>
         <button class="icon-btn" id="btn-lock" title="Mantener pantalla encendida">🔓</button>
@@ -985,7 +1000,7 @@ Volver al sonido 1 = 6"></textarea>
         const { chordLine, lyricLine, hasChords } = buildChordLyricLines(line.segments, semitoneOffset, preferFlats);
         const trimmedLyric = lyricLine.trim();
         const isRepeatMarker = hasChords && REPEAT_MARKER_RE.test(trimmedLyric);
-        html += `<div class="chord-lyric-block" data-section-idx="${sectionIdx}">`;
+        html += `<div class="chord-lyric-block" data-section-idx="${sectionIdx}" data-has-chords="${hasChords ? 1 : 0}">`;
         if(hasChords){
           const chordLineOut = isRepeatMarker
             ? chordLine.replace(/\s+$/, '') + '  ' + trimmedLyric
@@ -1922,6 +1937,53 @@ Volver al sonido 1 = 6"></textarea>
   const chordPhotoInput = document.getElementById('chord-photo-input');
   const ocrOverlay = document.getElementById('ocr-overlay');
   const sectionsSidebar = document.getElementById('sections-sidebar');
+
+  // "Solo acordes": preferencia de este dispositivo (no se guarda por
+  // canción ni se sincroniza entre dispositivos — cada atril decide cómo
+  // quiere ver la letra). Oculta el texto cantado y deja solo los acordes,
+  // más compacto; todo lo demás (autoscroll, automatismos de Ableton,
+  // resaltado de línea actual...) sigue funcionando exactamente igual,
+  // porque solo cambia el CSS — el documento y sus puntos de control no
+  // se tocan.
+  const CHORDS_ONLY_KEY = "modoEscenario.chordsOnlyMode";
+  const btnChordsOnly = document.getElementById('btn-chords-only');
+  let chordsOnlyMode = safeStorage.getItem(CHORDS_ONLY_KEY) === '1';
+
+  function applyChordsOnlyMode(){
+    lyricsContent.classList.toggle('chords-only', chordsOnlyMode);
+    btnChordsOnly.classList.toggle('active', chordsOnlyMode);
+    btnChordsOnly.title = chordsOnlyMode
+      ? 'Mostrando solo acordes — toca para ver la letra también'
+      : 'Mostrar solo acordes (sin letra)';
+  }
+  applyChordsOnlyMode();
+
+  btnChordsOnly.addEventListener('click', () => {
+    const song = songs[currentIndex];
+    // Guardamos en qué segundo real estábamos (según los puntos de control
+    // CON el alto de contenido actual) para poder recolocar el scroll en el
+    // mismo punto una vez cambie el alto (la letra ocupa mucho más que solo
+    // los acordes, así que las posiciones en píxeles cambian al ocultarla).
+    const oldPoints = song ? buildSectionCheckpoints(song) : null;
+    const elapsedBefore = oldPoints ? elapsedForScrollTop(oldPoints, lyricsScroll.scrollTop) : null;
+    const wasPlaying = autoscrolling;
+    if(wasPlaying) stopAutoscroll();
+
+    chordsOnlyMode = !chordsOnlyMode;
+    safeStorage.setItem(CHORDS_ONLY_KEY, chordsOnlyMode ? '1' : '0');
+    applyChordsOnlyMode();
+
+    if(song){
+      const newPoints = buildSectionCheckpoints(song);
+      if(newPoints && elapsedBefore !== null){
+        lyricsScroll.scrollTop = scrollTopForElapsed(newPoints, elapsedBefore);
+      }
+      renderSectionsSidebar();
+      updateCurrentLineHighlight(newPoints, elapsedBefore !== null ? elapsedBefore : undefined);
+      if(newPoints) updateSectionSidebarHighlight(elapsedBefore || 0);
+    }
+    if(wasPlaying) startAutoscroll();
+  });
 
   let currentIndex = 0;
   let currentTranspose = 0;
