@@ -213,6 +213,11 @@
      se enseña y qué se resalta como "actual". */
   #lyrics-content.chords-only .chord-lyric-block,
   #lyrics-content.chords-only .blank-line{display:none;}
+  /* Una sección marcada como duplicado de otra anterior (mismos acordes,
+     aunque no vayan seguidas) no se enseña como fila propia — su conteo ya
+     se sumó al "xN" de la primera aparición. */
+  #lyrics-content.chords-only .section-title.chords-duplicate,
+  #lyrics-content.chords-only .section-chords-summary.chords-duplicate{display:none;}
   #lyrics-content.chords-only .section-chords-summary{display:block;font-size:1.2em;margin:0 0 22px;}
   #lyrics-content.chords-only.playing .section-chords-summary{opacity:0.5;transition:font-size 0.2s ease,opacity 0.2s ease;}
   #lyrics-content.chords-only.playing .section-chords-summary.current-section{opacity:1;font-size:1.5em;}
@@ -1002,31 +1007,48 @@ Volver al sonido 1 = 6"></textarea>
   // acordes fila por fila (quedaban huecos raros donde había palabras
   // largas, y muchas filas seguidas con el mismo acorde repetido),
   // resumimos cada parte de la canción en UNA sola línea, tal como las
-  // chuletas de acordes de verdad — y como pidió Albert: "cada parte de la
-  // canción con su línea individual. Si es una parte que se repite dos o
-  // tres veces, se puede poner por dos o por tres." Aquí agrupamos líneas
-  // consecutivas que tengan EXACTAMENTE los mismos acordes y las
-  // comprimimos con "x2"/"x3"; un marcador de repetición propio de la
-  // línea (p.ej. "[E][Bm7][D9][A] x4") también se suma al contador.
-  // Devuelve un array de strings indexado igual que sectionIdx en
-  // renderParsedContent.
+  // chuletas de acordes de verdad. Primero pegamos líneas consecutivas con
+  // EXACTAMENTE los mismos acordes (un marcador propio de línea, p.ej.
+  // "[E][Bm7][D9][A] x4", también cuenta). Pero eso no bastaba para casos
+  // como "Last Nite", donde la estrofa es un ciclo de 4 acordes distintos
+  // (D Em A F#m-Em) que se repite 3 veces seguidas línea a línea — ningún
+  // par de líneas ADYACENTES es idéntico, así que ese primer pegado no
+  // detecta nada. Por eso, después, buscamos el BLOQUE más pequeño que,
+  // repetido N veces seguidas, reconstruye toda la sección (el mismo
+  // truco que para encontrar el periodo de una secuencia), y lo
+  // comprimimos a "ese bloque x{N}". Devuelve un array de strings
+  // indexado igual que sectionIdx en renderParsedContent.
+  function formatTokenSequenceWithPeriod(tokens){
+    const n = tokens.length;
+    if(!n) return '';
+    const tokenKey = t => t.key + '#' + t.count;
+    let period = n;
+    for(let len = 1; len <= Math.floor(n / 2); len++){
+      if(n % len !== 0) continue;
+      let tiles = true;
+      for(let i = len; i < n && tiles; i++){
+        if(tokenKey(tokens[i]) !== tokenKey(tokens[i % len])) tiles = false;
+      }
+      if(tiles){ period = len; break; } // el primer periodo que encaja ya es el más pequeño posible
+    }
+    const block = tokens.slice(0, period);
+    const blockText = block.map(t => t.chords.join(' ') + (t.count > 1 ? ' x' + t.count : '')).join('   ');
+    const repeats = n / period;
+    return repeats > 1 ? blockText + '   x' + repeats : blockText;
+  }
+
   function computeSectionChordSummaries(parsedLines, semitoneOffset, preferFlats){
     const summaries = [];
     let idx = -1;
-    let groups = [];
+    let tokens = [];
     function flush(){
-      if(idx >= 0){
-        summaries[idx] = groups.map(g => {
-          const base = g.chords.join(' ');
-          return g.count > 1 ? base + ' x' + g.count : base;
-        }).join('   ');
-      }
+      if(idx >= 0) summaries[idx] = formatTokenSequenceWithPeriod(tokens);
     }
     for(const line of parsedLines){
       if(line.type === 'header'){
         flush();
         idx++;
-        groups = [];
+        tokens = [];
       } else if(line.type !== 'blank'){
         const { chords, lyricLine, hasChords } = buildChordLyricLines(line.segments, semitoneOffset, preferFlats);
         if(!hasChords) continue;
@@ -1036,11 +1058,11 @@ Volver al sonido 1 = 6"></textarea>
           ? (parseInt((trimmedLyric.match(/\d+/) || ['1'])[0], 10) || 1)
           : 1;
         const key = chords.join('\u0001');
-        const last = groups[groups.length - 1];
+        const last = tokens[tokens.length - 1];
         if(last && last.key === key){
           last.count += repeatCount;
         } else {
-          groups.push({ key, chords, count: repeatCount });
+          tokens.push({ key, chords, count: repeatCount });
         }
       }
     }
@@ -1048,9 +1070,40 @@ Volver al sonido 1 = 6"></textarea>
     return summaries;
   }
 
+  // Si una sección va PEGADA justo detrás de otra con el mismo resumen de
+  // acordes (sin ninguna otra parte entre medio), se fusionan: la primera
+  // aparición se queda con el total de veces que se repite seguida ("x2",
+  // "x3"...) y la(s) siguiente(s) se marcan como duplicado para ocultarse
+  // en el render y redirigir hacia ella el resaltado de "sección actual".
+  // A propósito NO fusionamos secciones repetidas que NO van seguidas
+  // (p.ej. con un estribillo de por medio): Albert prefirió dejarlas cada
+  // una en su propia línea en ese caso.
+  function resolveSectionChordDuplicates(rawSummaries){
+    const canonicalOf = [];
+    const counts = [];
+    for(let idx = 0; idx < rawSummaries.length; idx++){
+      const summary = rawSummaries[idx];
+      const prevCanonical = idx > 0 ? canonicalOf[idx - 1] : null;
+      if(summary && prevCanonical !== null && rawSummaries[prevCanonical] === summary){
+        canonicalOf[idx] = prevCanonical;
+        counts[prevCanonical] = (counts[prevCanonical] || 1) + 1;
+      } else {
+        canonicalOf[idx] = idx;
+        counts[idx] = 1;
+      }
+    }
+    const displaySummaries = rawSummaries.map((summary, idx) => {
+      if(canonicalOf[idx] !== idx || !summary) return summary;
+      const n = counts[idx] || 1;
+      return n > 1 ? summary + '   x' + n : summary;
+    });
+    return { canonicalOf, displaySummaries };
+  }
+
   function renderParsedContent(parsedLines, semitoneOffset, preferFlats){
     let html = '';
-    const sectionSummaries = computeSectionChordSummaries(parsedLines, semitoneOffset, preferFlats);
+    const rawSectionSummaries = computeSectionChordSummaries(parsedLines, semitoneOffset, preferFlats);
+    const { canonicalOf, displaySummaries } = resolveSectionChordDuplicates(rawSectionSummaries);
     // Vamos contando en qué sección estamos (misma numeración y mismo orden
     // que usa buildSectionCheckpoints para emparejar sectionTimes con los
     // ".section-title" pintados) y etiquetamos cada bloque de letra con su
@@ -1061,8 +1114,9 @@ Volver al sonido 1 = 6"></textarea>
     for(const line of parsedLines){
       if(line.type === 'header'){
         sectionIdx++;
-        html += `<div class="section-title">${escapeHtml(line.text)}</div>`;
-        html += `<div class="section-chords-summary" data-section-idx="${sectionIdx}">${escapeHtml(sectionSummaries[sectionIdx] || '')}</div>`;
+        const isDup = canonicalOf[sectionIdx] !== sectionIdx;
+        html += `<div class="section-title${isDup ? ' chords-duplicate' : ''}">${escapeHtml(line.text)}</div>`;
+        html += `<div class="section-chords-summary${isDup ? ' chords-duplicate' : ''}" data-section-idx="${sectionIdx}" data-canonical-idx="${canonicalOf[sectionIdx]}">${escapeHtml(displaySummaries[sectionIdx] || '')}</div>`;
       } else if(line.type === 'blank'){
         html += `<div class="blank-line"></div>`;
       } else {
@@ -2589,7 +2643,14 @@ Volver al sonido 1 = 6"></textarea>
           if(checkpoints[i].idx >= 0 && elapsedSec >= checkpoints[i].sec - 0.001) curPos = i;
         }
         const idx = curPos >= 0 ? checkpoints[curPos].idx : 0;
-        const match = lyricsContent.querySelector(`.section-chords-summary[data-section-idx="${idx}"]`);
+        // Si la sección que toca ahora mismo es un duplicado oculto (p.ej.
+        // estamos en "Verse 3" pero su fila está oculta porque se fusionó
+        // con "Verse 1"), resaltamos la fila original en su lugar — así
+        // siempre hay algo marcado como "actual" aunque esa sección en
+        // concreto no tenga fila propia en pantalla.
+        const own = lyricsContent.querySelector(`.section-chords-summary[data-section-idx="${idx}"]`);
+        const canonicalIdx = own && own.dataset.canonicalIdx !== undefined ? own.dataset.canonicalIdx : idx;
+        const match = lyricsContent.querySelector(`.section-chords-summary[data-section-idx="${canonicalIdx}"]`);
         if(match !== currentSectionSummaryEl){
           if(currentSectionSummaryEl) currentSectionSummaryEl.classList.remove('current-section');
           if(match) match.classList.add('current-section');
