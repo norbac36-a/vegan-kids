@@ -1079,25 +1079,26 @@ Volver al sonido 1 = 6"></textarea>
   // (p.ej. con un estribillo de por medio): Albert prefirió dejarlas cada
   // una en su propia línea en ese caso.
   function resolveSectionChordDuplicates(rawSummaries){
+    // Oculta cualquier sección cuyo resumen de acordes (ya comprimido con su
+    // propio "xN" interno) sea EXACTAMENTE igual al de una sección anterior,
+    // sin importar si están seguidas o no. No se añade ningún "xN" extra al
+    // ocultar: el resumen original (p.ej. "D Em A F#m Em   x3") ya lleva su
+    // propio recuento, así que mezclar un conteo global sería confuso
+    // ("...x4   x2"). Dos secciones con el mismo bloque de acordes pero
+    // distinto número de repeticiones (p.ej. Verse1 x3 vs Verse2 x2) tienen
+    // cadenas finales distintas y por tanto NO se fusionan.
     const canonicalOf = [];
-    const counts = [];
+    const firstIdxOf = new Map();
     for(let idx = 0; idx < rawSummaries.length; idx++){
       const summary = rawSummaries[idx];
-      const prevCanonical = idx > 0 ? canonicalOf[idx - 1] : null;
-      if(summary && prevCanonical !== null && rawSummaries[prevCanonical] === summary){
-        canonicalOf[idx] = prevCanonical;
-        counts[prevCanonical] = (counts[prevCanonical] || 1) + 1;
+      if(summary && firstIdxOf.has(summary)){
+        canonicalOf[idx] = firstIdxOf.get(summary);
       } else {
         canonicalOf[idx] = idx;
-        counts[idx] = 1;
+        if(summary) firstIdxOf.set(summary, idx);
       }
     }
-    const displaySummaries = rawSummaries.map((summary, idx) => {
-      if(canonicalOf[idx] !== idx || !summary) return summary;
-      const n = counts[idx] || 1;
-      return n > 1 ? summary + '   x' + n : summary;
-    });
-    return { canonicalOf, displaySummaries };
+    return { canonicalOf, displaySummaries: rawSummaries };
   }
 
   function renderParsedContent(parsedLines, semitoneOffset, preferFlats){
