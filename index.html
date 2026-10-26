@@ -181,6 +181,13 @@
   .section-title:first-child{margin-top:0;}
   .chord-lyric-block{margin-bottom:2px;}
   .chord-line{color:var(--chord);font-weight:700;white-space:pre;transition:font-size 0.2s ease;}
+  /* Resumen de acordes de una sección entera (ver chords-only más abajo):
+     una sola línea por parte de la canción (Intro, Estrofa, Estribillo...),
+     con las tiradas de acordes que se repiten consecutivamente comprimidas
+     con "x2"/"x3", al estilo de una chuleta de acordes de verdad — en vez
+     de arrastrar línea por línea toda la letra que ya no se ve. Oculta por
+     defecto: solo se enseña en modo solo acordes. */
+  .section-chords-summary{display:none;color:var(--chord);font-weight:700;white-space:pre-wrap;transition:font-size 0.2s ease;}
   .lyric-line-text{white-space:pre;transition:font-size 0.2s ease,opacity 0.2s ease,color 0.2s ease;}
   .blank-line{height:1.1em;}
   /* Modo "en directo" (mientras suena el autoscroll): la línea actual se
@@ -195,19 +202,20 @@
   #lyrics-content.playing .chord-lyric-block.current-line .lyric-line-text{font-size:1.3em;}
   #lyrics-content.playing .chord-lyric-block.current-line .lyric-line-text{opacity:1;font-weight:700;color:var(--text);}
 
-  /* Modo "solo acordes": oculta la letra y deja solo los acordes, más
-     compacto (sin huecos donde iría la letra, ni líneas en blanco, ni
-     bloques que no tuvieran ningún acorde de todas formas). Los mismos
-     elementos del DOM y las mismas posiciones de ".section-title" se
-     mantienen intactas para no tocar el sistema de sincronización
-     (buildSectionCheckpoints / resaltado de línea actual) — simplemente se
-     visten distinto. */
-  #lyrics-content.chords-only .lyric-line-text,
-  #lyrics-content.chords-only .blank-line,
-  #lyrics-content.chords-only .chord-lyric-block[data-has-chords="0"]{display:none;}
-  #lyrics-content.chords-only .chord-lyric-block{margin-bottom:12px;}
-  #lyrics-content.chords-only .chord-line{font-size:1.2em;}
-  #lyrics-content.chords-only.playing .chord-lyric-block.current-line .chord-line{font-size:1.5em;}
+  /* Modo "solo acordes": como una chuleta de acordes de verdad — una línea
+     por parte de la canción (Intro, Estrofa, Estribillo...), no una línea
+     por cada línea de letra original. Los bloques de letra individuales
+     (.chord-lyric-block) se ocultan enteros y en su lugar se enseña
+     .section-chords-summary, que ya lleva las tiradas repetidas
+     comprimidas con "x2"/"x3". Los mismos elementos del DOM y las mismas
+     posiciones de ".section-title" se mantienen intactas para no tocar el
+     sistema de sincronización (buildSectionCheckpoints) — solo cambia qué
+     se enseña y qué se resalta como "actual". */
+  #lyrics-content.chords-only .chord-lyric-block,
+  #lyrics-content.chords-only .blank-line{display:none;}
+  #lyrics-content.chords-only .section-chords-summary{display:block;font-size:1.2em;margin:0 0 22px;}
+  #lyrics-content.chords-only.playing .section-chords-summary{opacity:0.5;transition:font-size 0.2s ease,opacity 0.2s ease;}
+  #lyrics-content.chords-only.playing .section-chords-summary.current-section{opacity:1;font-size:1.5em;}
 
   #stage-bottom{flex:0 0 auto;border-top:1px solid var(--border);background:var(--panel);
     padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
@@ -970,7 +978,16 @@ Volver al sonido 1 = 6"></textarea>
       while(chordLine.length < cp.col) chordLine += ' ';
       chordLine += cp.chord;
     }
-    return { chordLine, lyricLine, hasChords: chordPositions.length > 0 };
+    return {
+      chordLine,
+      // Lista plana de los acordes de esta línea, en orden, sin la
+      // columna que ocupaban sobre la letra. La usa
+      // computeSectionChordSummaries para agrupar líneas consecutivas con
+      // los mismos acordes (modo "solo acordes").
+      chords: chordPositions.map(cp => cp.chord),
+      lyricLine,
+      hasChords: chordPositions.length > 0
+    };
   }
 
   // Un "marcador de repetición" (x2, x3, x4...) al final de una tirada de
@@ -981,8 +998,59 @@ Volver al sonido 1 = 6"></textarea>
   // final de la línea de acordes en vez de dejarlo como fila de letra.
   const REPEAT_MARKER_RE = /^[x×]\s?\d+$/i;
 
+  // Para el modo "solo acordes": en vez de enseñar la letra oculta con sus
+  // acordes fila por fila (quedaban huecos raros donde había palabras
+  // largas, y muchas filas seguidas con el mismo acorde repetido),
+  // resumimos cada parte de la canción en UNA sola línea, tal como las
+  // chuletas de acordes de verdad — y como pidió Albert: "cada parte de la
+  // canción con su línea individual. Si es una parte que se repite dos o
+  // tres veces, se puede poner por dos o por tres." Aquí agrupamos líneas
+  // consecutivas que tengan EXACTAMENTE los mismos acordes y las
+  // comprimimos con "x2"/"x3"; un marcador de repetición propio de la
+  // línea (p.ej. "[E][Bm7][D9][A] x4") también se suma al contador.
+  // Devuelve un array de strings indexado igual que sectionIdx en
+  // renderParsedContent.
+  function computeSectionChordSummaries(parsedLines, semitoneOffset, preferFlats){
+    const summaries = [];
+    let idx = -1;
+    let groups = [];
+    function flush(){
+      if(idx >= 0){
+        summaries[idx] = groups.map(g => {
+          const base = g.chords.join(' ');
+          return g.count > 1 ? base + ' x' + g.count : base;
+        }).join('   ');
+      }
+    }
+    for(const line of parsedLines){
+      if(line.type === 'header'){
+        flush();
+        idx++;
+        groups = [];
+      } else if(line.type !== 'blank'){
+        const { chords, lyricLine, hasChords } = buildChordLyricLines(line.segments, semitoneOffset, preferFlats);
+        if(!hasChords) continue;
+        const trimmedLyric = lyricLine.trim();
+        const isRepeatMarker = REPEAT_MARKER_RE.test(trimmedLyric);
+        const repeatCount = isRepeatMarker
+          ? (parseInt((trimmedLyric.match(/\d+/) || ['1'])[0], 10) || 1)
+          : 1;
+        const key = chords.join('\u0001');
+        const last = groups[groups.length - 1];
+        if(last && last.key === key){
+          last.count += repeatCount;
+        } else {
+          groups.push({ key, chords, count: repeatCount });
+        }
+      }
+    }
+    flush();
+    return summaries;
+  }
+
   function renderParsedContent(parsedLines, semitoneOffset, preferFlats){
     let html = '';
+    const sectionSummaries = computeSectionChordSummaries(parsedLines, semitoneOffset, preferFlats);
     // Vamos contando en qué sección estamos (misma numeración y mismo orden
     // que usa buildSectionCheckpoints para emparejar sectionTimes con los
     // ".section-title" pintados) y etiquetamos cada bloque de letra con su
@@ -994,6 +1062,7 @@ Volver al sonido 1 = 6"></textarea>
       if(line.type === 'header'){
         sectionIdx++;
         html += `<div class="section-title">${escapeHtml(line.text)}</div>`;
+        html += `<div class="section-chords-summary" data-section-idx="${sectionIdx}">${escapeHtml(sectionSummaries[sectionIdx] || '')}</div>`;
       } else if(line.type === 'blank'){
         html += `<div class="blank-line"></div>`;
       } else {
@@ -2493,6 +2562,7 @@ Volver al sonido 1 = 6"></textarea>
   // datos nuevos que rellenar canción a canción.
   const CURRENT_LINE_ANCHOR_FRACTION = 0.22;
   let currentLineEl = null;
+  let currentSectionSummaryEl = null;
   let lastHighlightCheck = 0;
 
   function clearCurrentLineHighlight(){
@@ -2500,9 +2570,34 @@ Volver al sonido 1 = 6"></textarea>
       currentLineEl.classList.remove('current-line');
       currentLineEl = null;
     }
+    if(currentSectionSummaryEl){
+      currentSectionSummaryEl.classList.remove('current-section');
+      currentSectionSummaryEl = null;
+    }
   }
 
   function updateCurrentLineHighlight(checkpoints, elapsedSec){
+    // Modo "solo acordes": ya no hay líneas sueltas que resaltar, solo una
+    // fila por sección — así que en vez de la búsqueda línea a línea de
+    // abajo, nos limitamos a marcar qué sección toca ahora mismo por
+    // tiempo real (mismo cálculo de "sección actual" que usa el resto de
+    // la app).
+    if(lyricsContent.classList.contains('chords-only')){
+      if(checkpoints && Number.isFinite(elapsedSec)){
+        let curPos = -1;
+        for(let i = 0; i < checkpoints.length; i++){
+          if(checkpoints[i].idx >= 0 && elapsedSec >= checkpoints[i].sec - 0.001) curPos = i;
+        }
+        const idx = curPos >= 0 ? checkpoints[curPos].idx : 0;
+        const match = lyricsContent.querySelector(`.section-chords-summary[data-section-idx="${idx}"]`);
+        if(match !== currentSectionSummaryEl){
+          if(currentSectionSummaryEl) currentSectionSummaryEl.classList.remove('current-section');
+          if(match) match.classList.add('current-section');
+          currentSectionSummaryEl = match;
+        }
+      }
+      return;
+    }
     const allBlocks = lyricsContent.querySelectorAll('.chord-lyric-block');
     if(!allBlocks.length) return;
 
