@@ -1018,37 +1018,76 @@ Volver al sonido 1 = 6"></textarea>
   // truco que para encontrar el periodo de una secuencia), y lo
   // comprimimos a "ese bloque x{N}". Devuelve un array de strings
   // indexado igual que sectionIdx en renderParsedContent.
-  function formatTokenSequenceWithPeriod(tokens){
-    const n = tokens.length;
+  // Comprime la secuencia PLANA de acordes de una sección (acorde a acorde,
+  // sin importar en qué línea de la letra cae cada uno). En cada posición
+  // busca el ciclo que, repetido, cubra la mayor cantidad de acordes
+  // seguidos a partir de ahí (si hay empate, el ciclo más corto); si lo
+  // encuentra, lo comprime en "acorde1 acorde2 ... xN" y continúa justo
+  // después. Esto detecta repeticiones que no coinciden con los saltos de
+  // línea de la letra original — p.ej. una estrofa de 4 acordes que se
+  // repite 4 veces pero cada línea de texto corta el ciclo en un punto
+  // distinto (casos reales: Starlight, Kids, Años 80...) — algo que agrupar
+  // solo por líneas idénticas nunca detectaría.
+  // Cuando NO encuentra ningún ciclo a partir de una posición, en vez de
+  // soltar los acordes sueltos uno a uno, se queda con el resto de la línea
+  // ORIGINAL de la letra tal cual estaba agrupada (usando lineOfChord), para
+  // no trocear en fragmentos de un acorde lo que simplemente no se repite.
+  function compressChordSequence(chords, lineOfChord){
+    const n = chords.length;
     if(!n) return '';
-    const tokenKey = t => t.key + '#' + t.count;
-    let period = n;
-    for(let len = 1; len <= Math.floor(n / 2); len++){
-      if(n % len !== 0) continue;
-      let tiles = true;
-      for(let i = len; i < n && tiles; i++){
-        if(tokenKey(tokens[i]) !== tokenKey(tokens[i % len])) tiles = false;
+    const segments = [];
+    let i = 0;
+    while(i < n){
+      const remaining = n - i;
+      let bestP = 0, bestR = 1, bestConsumed = 0;
+      for(let p = 1; p <= Math.floor(remaining / 2); p++){
+        let r = 1;
+        while((r + 1) * p <= remaining){
+          let matches = true;
+          for(let k = 0; k < p; k++){
+            if(chords[i + r * p + k] !== chords[i + k]){ matches = false; break; }
+          }
+          if(!matches) break;
+          r++;
+        }
+        if(r >= 2){
+          const consumed = p * r;
+          if(consumed > bestConsumed || (consumed === bestConsumed && p < bestP)){
+            bestP = p; bestR = r; bestConsumed = consumed;
+          }
+        }
       }
-      if(tiles){ period = len; break; } // el primer periodo que encaja ya es el más pequeño posible
+      if(bestR >= 2){
+        segments.push(chords.slice(i, i + bestP).join(' ') + ' x' + bestR);
+        i += bestConsumed;
+      } else {
+        const curLine = lineOfChord[i];
+        let j = i;
+        while(j < n && lineOfChord[j] === curLine) j++;
+        segments.push(chords.slice(i, j).join(' '));
+        i = j;
+      }
     }
-    const block = tokens.slice(0, period);
-    const blockText = block.map(t => t.chords.join(' ') + (t.count > 1 ? ' x' + t.count : '')).join('   ');
-    const repeats = n / period;
-    return repeats > 1 ? blockText + '   x' + repeats : blockText;
+    return segments.join('   ');
   }
 
   function computeSectionChordSummaries(parsedLines, semitoneOffset, preferFlats){
     const summaries = [];
     let idx = -1;
-    let tokens = [];
+    let flatChords = [];
+    let lineOfChord = [];
+    let lineCounter = 0;
     function flush(){
-      if(idx >= 0) summaries[idx] = formatTokenSequenceWithPeriod(tokens);
+      if(idx < 0) return;
+      summaries[idx] = compressChordSequence(flatChords, lineOfChord);
     }
     for(const line of parsedLines){
       if(line.type === 'header'){
         flush();
         idx++;
-        tokens = [];
+        flatChords = [];
+        lineOfChord = [];
+        lineCounter = 0;
       } else if(line.type !== 'blank'){
         const { chords, lyricLine, hasChords } = buildChordLyricLines(line.segments, semitoneOffset, preferFlats);
         if(!hasChords) continue;
@@ -1057,12 +1096,12 @@ Volver al sonido 1 = 6"></textarea>
         const repeatCount = isRepeatMarker
           ? (parseInt((trimmedLyric.match(/\d+/) || ['1'])[0], 10) || 1)
           : 1;
-        const key = chords.join('\u0001');
-        const last = tokens[tokens.length - 1];
-        if(last && last.key === key){
-          last.count += repeatCount;
-        } else {
-          tokens.push({ key, chords, count: repeatCount });
+        const lineId = lineCounter++;
+        for(let r = 0; r < repeatCount; r++){
+          for(const chord of chords){
+            flatChords.push(chord);
+            lineOfChord.push(lineId);
+          }
         }
       }
     }
@@ -1070,14 +1109,6 @@ Volver al sonido 1 = 6"></textarea>
     return summaries;
   }
 
-  // Si una sección va PEGADA justo detrás de otra con el mismo resumen de
-  // acordes (sin ninguna otra parte entre medio), se fusionan: la primera
-  // aparición se queda con el total de veces que se repite seguida ("x2",
-  // "x3"...) y la(s) siguiente(s) se marcan como duplicado para ocultarse
-  // en el render y redirigir hacia ella el resaltado de "sección actual".
-  // A propósito NO fusionamos secciones repetidas que NO van seguidas
-  // (p.ej. con un estribillo de por medio): Albert prefirió dejarlas cada
-  // una en su propia línea en ese caso.
   function resolveSectionChordDuplicates(rawSummaries){
     // Oculta cualquier sección cuyo resumen de acordes (ya comprimido con su
     // propio "xN" interno) sea EXACTAMENTE igual al de una sección anterior,
