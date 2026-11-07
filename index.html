@@ -177,6 +177,14 @@
   .color-field input[type=color]{width:44px;height:38px;border:1px solid var(--border);border-radius:8px;background:none;padding:2px;}
   .color-field input[type=text]{width:110px;}
   .help-text{font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;}
+  /* Fase 2 — botón "Añadir sección" en el editor: inserta "## <Tipo>" en el
+     sitio del cursor, con el tipo elegido en la lista, para no tener que
+     escribir la sintaxis "## " a mano ni arriesgarse a una errata que
+     impida que la sección salga coloreada. */
+  .section-insert-row{display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+  .section-insert-row select{flex:0 0 auto;width:auto;background:var(--panel-2);
+    border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:8px;font-size:13px;}
+  .section-insert-row .btn{flex:0 0 auto;white-space:nowrap;}
   #section-times-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
   .section-time-row{display:flex;align-items:center;gap:8px;background:var(--panel-2);
     border:1px solid var(--border);border-radius:8px;padding:6px 10px;}
@@ -420,7 +428,7 @@
       <img src="assets/logo-acorda.png" alt="ACORDA — Music · Live · Control">
     </div>
     <nav class="acorda-nav">
-      <button type="button" class="active" id="nav-repertorio" data-nav="repertorio"><span class="ic">♪</span> Repertorio</button>
+      <button type="button" class="active" id="nav-repertorio" data-nav="repertorio"><span class="ic">♪</span> Concierto</button>
       <button type="button" id="nav-ensayo" data-nav="ensayo"><span class="ic">🎬</span> Ensayo</button>
       <button type="button" id="nav-control" data-nav="control"><span class="ic">🎛</span> Control</button>
       <button type="button" id="nav-ajustes" data-nav="ajustes"><span class="ic">⚙</span> Ajustes</button>
@@ -670,6 +678,19 @@ Volver al sonido 1 = 6"></textarea>
 
     <div class="field">
       <label>Letra y acordes</label>
+      <div class="section-insert-row">
+        <select id="f-section-type" title="Tipo de sección a insertar">
+          <option value="Intro">Intro</option>
+          <option value="Estrofa">Estrofa</option>
+          <option value="Pre-tornada">Pre-tornada</option>
+          <option value="Tornada">Tornada</option>
+          <option value="Instrumental">Instrumental</option>
+          <option value="Puente">Puente</option>
+          <option value="Aturada">Aturada</option>
+          <option value="Final">Final</option>
+        </select>
+        <button type="button" id="btn-insert-section" class="btn btn-sm">+ Añadir sección</button>
+      </div>
       <textarea id="f-content" placeholder="## Intro
 [E] [Bm7] [D9] [A] x4
 
@@ -678,6 +699,8 @@ Volver al sonido 1 = 6"></textarea>
       <div class="help-text">
         Sintaxis: una línea que empieza por <code>## </code> es un título de sección (Intro, Verse 1...).
         Escribe el acorde justo antes de la palabra donde cambia, entre corchetes: <code>[Em]así</code>.
+        El botón "+ Añadir sección" te la inserta en el sitio del cursor, ya con el tipo
+        correcto elegido en la lista — así no hace falta escribir el "## " a mano.
       </div>
     </div>
 
@@ -1694,6 +1717,8 @@ Volver al sonido 1 = 6"></textarea>
   const fColorPicker = document.getElementById('f-color-picker');
   const fColorHex = document.getElementById('f-color-hex');
   const fContent = document.getElementById('f-content');
+  const fSectionType = document.getElementById('f-section-type');
+  const btnInsertSection = document.getElementById('btn-insert-section');
   const fAbletonPitch = document.getElementById('f-ableton-pitch');
   const fExtraScenes = document.getElementById('f-extra-scenes');
   const fLiveTriggers = document.getElementById('f-live-triggers');
@@ -2099,6 +2124,49 @@ Volver al sonido 1 = 6"></textarea>
     if(isValidHex(fColorHex.value)) fColorPicker.value = fColorHex.value;
   });
   fContent.addEventListener('input', updatePreview);
+
+  // Fase 2 — "+ Añadir sección": inserta "## <Tipo>" exactamente donde esté
+  // el cursor en el textarea, respetando lo que ya haya escrito (no lo
+  // sustituye ni lo mueve de sitio). Usamos execCommand('insertText') porque
+  // deja intacto el historial de deshacer del textarea (Cmd/Ctrl+Z sigue
+  // funcionando con esto como con cualquier otra escritura); si el navegador
+  // no lo soporta, caemos a montar el texto a mano y avisar del cambio con
+  // un evento "input" (lo que ya escucha updatePreview arriba).
+  function insertSectionAtCursor(typeLabel){
+    const ta = fContent;
+    const val = ta.value;
+    const start = (typeof ta.selectionStart === 'number') ? ta.selectionStart : val.length;
+    const end = (typeof ta.selectionEnd === 'number') ? ta.selectionEnd : val.length;
+    const before = val.slice(0, start);
+    // Si el cursor no está ya al principio de una línea en blanco, añadimos
+    // los saltos de línea que falten para que la nueva sección quede
+    // separada del texto anterior, igual que el resto de secciones.
+    let leading = '';
+    if(before.length > 0){
+      if(/\n[ \t]*\n$/.test(before)){
+        leading = '';
+      } else if(before.endsWith('\n')){
+        leading = '\n';
+      } else {
+        leading = '\n\n';
+      }
+    }
+    const insertText = `${leading}## ${typeLabel}\n`;
+    ta.focus();
+    ta.setSelectionRange(start, end);
+    let ok = false;
+    try{ ok = document.execCommand && document.execCommand('insertText', false, insertText); } catch(e){ ok = false; }
+    if(!ok){
+      const after = val.slice(end);
+      ta.value = before + insertText + after;
+      const newPos = (before + insertText).length;
+      ta.setSelectionRange(newPos, newPos);
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  btnInsertSection.addEventListener('click', () => {
+    insertSectionAtCursor(fSectionType.value);
+  });
 
   document.getElementById('btn-cancel-edit').addEventListener('click', closeEditor);
   document.getElementById('btn-new-song').addEventListener('click', () => openEditor(null));
