@@ -3522,8 +3522,29 @@ Volver al sonido 1 = 6"></textarea>
         // de la canción (p.ej. un verso que entra a los 0:32 dejaría de
         // entrar a los 0:32). El control de "Velocidad" solo afecta al
         // modo antiguo de scroll a ritmo constante (ver el "else" de abajo).
-        elapsedMs += dt;
-        scrollPos = scrollTopForElapsedByLine(checkpoints, elapsedMs / 1000);
+        //
+        // En modo ensayo CON vídeo, en vez de llevar nuestro propio
+        // cronómetro (que corre en paralelo al del vídeo y puede irse
+        // desacompasando si YouTube tarda en arrancar, se queda cargando o
+        // se pausa), leemos directamente el tiempo real de reproducción del
+        // vídeo (getCurrentTime) y la letra se coloca donde le toca SEGÚN
+        // ESE tiempo — así van siempre pegados, pase lo que pase con el
+        // vídeo. El escenario en directo (sin vídeo) sigue exactamente
+        // igual que siempre, con su propio cronómetro independiente.
+        let elapsedSec;
+        if(practiceMode && pvPlayer && pvPlayerReady && typeof pvPlayer.getCurrentTime === 'function'){
+          try{
+            elapsedSec = pvPlayer.getCurrentTime();
+          } catch(e){
+            elapsedMs += dt;
+            elapsedSec = elapsedMs / 1000;
+          }
+        } else {
+          elapsedMs += dt;
+          elapsedSec = elapsedMs / 1000;
+        }
+        elapsedMs = elapsedSec * 1000;
+        scrollPos = scrollTopForElapsedByLine(checkpoints, elapsedSec);
       } else {
         scrollPos += pxPerMs * dt;
       }
