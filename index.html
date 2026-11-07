@@ -182,12 +182,15 @@
   .section-nav-item.current{background:var(--accent);color:var(--accent-text);border-color:var(--accent);
     border-left-color:var(--sec-color, var(--accent));font-weight:700;}
   .section-nav-item.current .nav-time{color:var(--accent-text);opacity:0.85;}
-  /* width:max-content (sin min-width:100%) hace que el bloque se ajuste al
-     ancho de su línea más larga, y margin:0 auto lo centra en la pantalla.
-     Antes min-width:100% obligaba al bloque a ocupar siempre todo el ancho
-     del contenedor, así que el margin:auto nunca tenía hueco para centrar
-     nada y el texto quedaba pegado a la izquierda. */
-  #lyrics-content{width:max-content;max-width:none;margin:0 auto;padding:0 16px;
+  /* width:max-content deja que el bloque crezca más que el contenedor
+     cuando una línea es muy larga (así updateContentFit puede medir el
+     desbordamiento real y encoger la fuente). min-width:100% + margin:0
+     aseguran que, cuando el contenido es más estrecho que la pantalla, el
+     bloque siga ocupando todo el ancho y el texto quede siempre pegado al
+     mismo margen izquierdo — antes, con margin:0 auto, cada canción se
+     centraba según su línea más larga y el margen izquierdo cambiaba de
+     una canción a otra. */
+  #lyrics-content{width:max-content;min-width:100%;max-width:none;margin:0;padding:0 16px;
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
     font-size:calc(16px * var(--scale, 1) * var(--fit-scale, 1));line-height:1.35;box-sizing:border-box;}
   .section-title{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
