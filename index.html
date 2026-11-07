@@ -2934,6 +2934,28 @@ Volver al sonido 1 = 6"></textarea>
   });
   pvAbClearBtn.addEventListener('click', () => { resetAbLoop(); });
 
+  // Vigilante independiente del loop A-B para cuando HAY vídeo: no depende
+  // de que el autoscroll de la letra (el ▶ de la app) esté corriendo, para
+  // cubrir también el caso de que Albert controle el vídeo directamente
+  // desde los controles nativos de YouTube (como pasó: el loop no saltaba
+  // porque el reloj de la letra estaba parado y todo el cálculo vivía
+  // dentro de ese bucle). Revisa 5 veces por segundo el tiempo real del
+  // vídeo y, si hace falta, lo devuelve a A — el propio step() de abajo ya
+  // lee getCurrentTime() en cada frame cuando SÍ está corriendo, así que en
+  // cuanto este salto ocurre la letra lo sigue sola, sin tener que tocar
+  // nada más aquí. Arranca una sola vez, al cargar la página, y se
+  // autolimita por sus propias comprobaciones (no hace nada si no estamos
+  // en ensayo, no hay vídeo listo, o el loop no está activo).
+  setInterval(() => {
+    if(!practiceMode || !abLoopEnabled || pointA == null || pointB == null) return;
+    if(!pvPlayer || !pvPlayerReady || typeof pvPlayer.getCurrentTime !== 'function') return;
+    let t;
+    try{ t = pvPlayer.getCurrentTime(); } catch(e){ return; }
+    if(t >= pointB - 0.05){
+      try{ pvPlayer.seekTo(pointA, true); } catch(e){ /* si falla, lo reintentamos en el próximo tick */ }
+    }
+  }, 200);
+
   function openStage(startIndex, opts){
     if(songs.length === 0){
       showToast('Añade al menos una canción primero.');
@@ -3778,29 +3800,30 @@ Volver al sonido 1 = 6"></textarea>
             elapsedMs += dt;
             elapsedSec = elapsedMs / 1000;
           }
+          // El salto de vuelta a A del loop "Repetición A-B", cuando HAY
+          // vídeo, lo hace un vigilante independiente (setInterval junto a
+          // los botones de la barra A-B, unas líneas más abajo) que no
+          // depende de que este bucle esté corriendo -- así el loop
+          // funciona también si Albert maneja el vídeo desde sus propios
+          // controles nativos de YouTube en vez del ▶ de la app (que es
+          // justo lo que pasó la primera vez: aquí no llegaba a ejecutarse
+          // porque el autoscroll de la letra estaba parado). En cuanto ese
+          // vigilante hace el seekTo, esta misma línea ya recoge el nuevo
+          // tiempo en el siguiente frame sin nada más que hacer aquí.
         } else {
           elapsedMs += dt;
           elapsedSec = elapsedMs / 1000;
+          // "Repetición A-B" SIN vídeo: no hay ningún reproductor externo
+          // que vigilar, así que aquí sí gobernamos nosotros el salto de
+          // vuelta a A, con el propio reloj de la letra.
+          if(practiceMode && abLoopEnabled && pointA != null && pointB != null && elapsedSec >= pointB - 0.05){
+            elapsedMs = pointA * 1000;
+            elapsedSec = pointA;
+          }
         }
         elapsedMs = elapsedSec * 1000;
         scrollPos = scrollTopForElapsedByLine(checkpoints, elapsedSec);
         lastElapsedSec = elapsedSec;
-        // "Repetición A-B" (solo tiene sentido con tiempos de sección
-        // grabados, que es justo lo que hace falta para que
-        // scrollTopForElapsedByLine funcione): si el loop está activo y
-        // hemos llegado -o pasado- el punto B, saltamos de vuelta a A, vídeo
-        // y letra a la vez. abLoopEnabled solo se puede activar desde la
-        // barra de modo ensayo, pero lo comprobamos también aquí por
-        // seguridad para no afectar nunca al directo.
-        if(practiceMode && abLoopEnabled && pointA != null && pointB != null && elapsedSec >= pointB - 0.05){
-          elapsedSec = pointA;
-          elapsedMs = pointA * 1000;
-          lastElapsedSec = pointA;
-          scrollPos = scrollTopForElapsedByLine(checkpoints, elapsedSec);
-          if(pvPlayer && pvPlayerReady && typeof pvPlayer.seekTo === 'function'){
-            try{ pvPlayer.seekTo(pointA, true); } catch(e){ /* seguimos solo con nuestro reloj si falla */ }
-          }
-        }
       } else {
         scrollPos += pxPerMs * dt;
       }
