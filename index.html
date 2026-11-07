@@ -251,6 +251,11 @@
   .section-nav-item.current{background:var(--accent);color:var(--accent-text);border-color:var(--accent);
     border-left-color:var(--sec-color, var(--accent));font-weight:700;}
   .section-nav-item.current .nav-time{color:var(--accent-text);opacity:0.85;}
+  /* Secciones ya tocadas (antes de la que suena ahora mismo): se quedan
+     atenuadas con un ✓, para ver de un vistazo cuánta canción queda sin
+     tener que leer los tiempos uno a uno. */
+  .section-nav-item.past{opacity:0.4;}
+  .section-nav-item.past::after{content:" ✓";}
   /* width:max-content deja que el bloque crezca más que el contenedor
      cuando una línea es muy larga (así updateContentFit puede medir el
      desbordamiento real y encoger la fuente). min-width:100% + margin:0
@@ -3000,11 +3005,22 @@ Volver al sonido 1 = 6"></textarea>
     const points = song ? buildSectionCheckpoints(song) : null;
     if(!points) return;
     const named = points.filter(p => p.title);
+    // currentPos es la posición (0, 1, 2...) de la parte actual dentro de
+    // "named", no su "idx" real — así podemos marcar como "past" (ya
+    // tocada) todo lo que queda ANTES en el orden de la canción, aunque la
+    // parte se repita varias veces (p.ej. "Tornada" 1/3, 2/3, 3/3 son tres
+    // botones con el mismo idx no, cada repetición tiene su propio punto).
     let currentIdx = null;
-    for(const p of named){
-      if(elapsedSec >= p.sec - 0.001) currentIdx = p.idx;
-    }
-    items.forEach(it => it.classList.toggle('current', parseInt(it.dataset.idx, 10) === currentIdx));
+    let currentPos = -1;
+    named.forEach((p, pos) => {
+      if(elapsedSec >= p.sec - 0.001){ currentIdx = p.idx; currentPos = pos; }
+    });
+    items.forEach(it => {
+      const idx = parseInt(it.dataset.idx, 10);
+      const pos = named.findIndex(p => p.idx === idx);
+      it.classList.toggle('current', idx === currentIdx);
+      it.classList.toggle('past', pos !== -1 && currentPos !== -1 && pos < currentPos);
+    });
   }
 
   function parseDurationSeconds(durationStr){
