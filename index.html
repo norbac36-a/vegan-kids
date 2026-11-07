@@ -3092,8 +3092,20 @@ Volver al sonido 1 = 6"></textarea>
   // recorrido real (0..maxScroll) de #lyrics-scroll. Medimos en su lugar la
   // posición real dentro del propio contenedor con scroll, usando el
   // rectángulo en pantalla (válido sea cual sea la posición de scroll actual).
+  //
+  // Antes, esta función devolvía el scrollTop exacto para dejar la línea
+  // "actual" pegada al borde superior (y=0) de la pantalla — por eso, en
+  // cuanto le tocaba el turno a una línea, ya estaba a punto de desaparecer
+  // por arriba: el propio cálculo la seguía empujando hacia la cabecera de
+  // la línea siguiente durante todo el tiempo que debía estar cantándose.
+  // Ahora restamos un margen (LYRICS_SCROLL_ANCHOR_FRACTION de la altura
+  // visible) para que la línea activa se quede más abajo, en la mitad
+  // superior de la pantalla, con margen de sobra antes de salir por arriba.
+  const LYRICS_SCROLL_ANCHOR_FRACTION = 0.24;
   function topWithinLyricsScroll(el){
-    return el.getBoundingClientRect().top - lyricsScroll.getBoundingClientRect().top + lyricsScroll.scrollTop;
+    const scrollRect = lyricsScroll.getBoundingClientRect();
+    const anchorOffset = scrollRect.height * LYRICS_SCROLL_ANCHOR_FRACTION;
+    return el.getBoundingClientRect().top - scrollRect.top + lyricsScroll.scrollTop - anchorOffset;
   }
 
   function buildSectionCheckpoints(song){
