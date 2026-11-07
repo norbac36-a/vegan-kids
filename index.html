@@ -244,6 +244,26 @@
   #sections-sidebar{width:150px;flex:0 0 150px;overflow-y:auto;border-right:1px solid var(--border);
     background:var(--panel);padding:10px 8px 90px;display:none;}
   #sections-sidebar.visible{display:block;}
+
+  /* Panel de vídeo de YouTube en modo Ensayo — oculto salvo que se abra el
+     escenario desde "Ensayo" Y la canción tenga un vídeo guardado. Va
+     siempre encima de la letra, a todo lo ancho, con una altura máxima para
+     no comerse la pantalla (la letra sigue teniendo su propio scroll justo
+     debajo, igual que en directo). */
+  #practice-video{display:none;flex:0 0 auto;max-height:34vh;border-bottom:1px solid var(--border);
+    background:var(--panel);padding:10px 16px;overflow-y:auto;}
+  #practice-video.visible{display:flex;gap:14px;align-items:flex-start;}
+  #practice-video .pv-frame-wrap{position:relative;width:min(100%, 420px);flex:1 1 320px;
+    padding-top:min(56.25%, 177px);border-radius:10px;overflow:hidden;background:#000;}
+  #practice-video .pv-frame-wrap iframe{position:absolute;inset:0;width:100%;height:100%;border:0;}
+  #practice-video .pv-side{flex:0 0 auto;font-size:12px;color:var(--text-dim);line-height:1.5;
+    padding-top:2px;max-width:220px;}
+  #practice-video .pv-side strong{color:var(--text);display:block;margin-bottom:2px;font-size:13px;}
+  #practice-video .pv-none{font-size:13px;color:var(--text-dim);line-height:1.4;}
+  @media (max-width:640px){
+    #practice-video.visible{flex-direction:column;}
+    #practice-video .pv-side{display:none;}
+  }
   .section-nav-item{display:block;width:100%;text-align:left;background:var(--panel-2);
     border:1px solid var(--border);border-left:4px solid var(--sec-color, var(--border));border-radius:8px;
     padding:7px 9px;margin-bottom:6px;font-size:12px;line-height:1.3;color:var(--text);}
@@ -399,6 +419,7 @@
     </div>
     <nav class="acorda-nav">
       <button type="button" class="active" id="nav-repertorio" data-nav="repertorio"><span class="ic">♪</span> Repertorio</button>
+      <button type="button" id="nav-ensayo" data-nav="ensayo"><span class="ic">🎬</span> Ensayo</button>
       <button type="button" id="nav-control" data-nav="control"><span class="ic">🎛</span> Control</button>
       <button type="button" id="nav-ajustes" data-nav="ajustes"><span class="ic">⚙</span> Ajustes</button>
       <button type="button" id="nav-acerca" data-nav="acerca"><span class="ic">ⓘ</span> Acerca de</button>
@@ -438,6 +459,25 @@
       <div class="actions-bar">
         <button class="btn btn-accent" id="btn-new-song">+ Nueva canción</button>
       </div>
+    </div>
+
+    <div class="acorda-panel" id="panel-ensayo">
+      <div class="list-header">
+        <div>
+          <h1>Ensayo</h1>
+        </div>
+      </div>
+      <p class="help-text">
+        Abre una canción con su vídeo de YouTube al lado de la letra y los acordes — la letra
+        avanza sola igual que en el escenario, sincronizada con los tiempos de sección de la
+        canción. Añade el enlace del vídeo desde "Editar" en cada canción.
+      </p>
+      <div class="acorda-search">
+        <span class="ic">🔎</span>
+        <input type="text" id="practice-song-search" placeholder="Buscar canción…">
+      </div>
+      <div id="practice-song-list"></div>
+      <div id="practice-empty-state" class="empty-state hidden"></div>
     </div>
 
     <div class="acorda-panel" id="panel-control">
@@ -534,6 +574,15 @@
         <input type="text" id="f-color-hex" value="#1c1c1c">
         <span class="help-text">Solo tiñe la barra de título, no la letra.</span>
       </div>
+    </div>
+
+    <div class="field">
+      <label for="f-youtube-url">Vídeo de YouTube para ensayar (opcional)</label>
+      <input type="text" id="f-youtube-url" placeholder="https://www.youtube.com/watch?v=...">
+      <span class="help-text">
+        Se enseña al lado de la letra en "Ensayo" (no aparece en el escenario en directo).
+        Pega el enlace normal de YouTube tal cual.
+      </span>
     </div>
 
     <div class="field" id="f-ableton-field">
@@ -713,6 +762,16 @@ Volver al sonido 1 = 6"></textarea>
   <div id="obs-box">
     <div class="obs-label">OBSERVACIONS</div>
     <textarea id="obs-text" placeholder="Notas para esta canción (cambios, avisos...)" rows="1"></textarea>
+  </div>
+
+  <div id="practice-video">
+    <div class="pv-frame-wrap" id="pv-frame-wrap"></div>
+    <div class="pv-none hidden" id="pv-none-msg">Esta canción todavía no tiene vídeo de YouTube guardado — añádelo desde «Editar» («Vídeo de YouTube para ensayar»).</div>
+    <div class="pv-side">
+      <strong>Modo ensayo</strong>
+      La letra avanza sola con los tiempos de sección de la canción, igual que en el escenario.
+      Dale a ▶ para arrancar los dos a la vez.
+    </div>
   </div>
 
   <div id="stage-body">
@@ -1423,6 +1482,9 @@ Volver al sonido 1 = 6"></textarea>
   const tabDbCountEl = document.getElementById('tab-db-count');
   const tabRepCountEl = document.getElementById('tab-rep-count');
   const songSearchEl = document.getElementById('song-search');
+  const practiceListEl = document.getElementById('practice-song-list');
+  const practiceEmptyStateEl = document.getElementById('practice-empty-state');
+  const practiceSearchEl = document.getElementById('practice-song-search');
 
   // Base de datos = todas las canciones (lo de siempre). Repertorio = solo
   // las marcadas con inRepertoire !== false — las canciones viejas, que no
@@ -1451,6 +1513,7 @@ Volver al sonido 1 = 6"></textarea>
     document.querySelectorAll('.acorda-panel').forEach(panel => {
       panel.classList.toggle('active', panel.id === `panel-${name}`);
     });
+    if(name === 'ensayo') renderPracticeList();
   }
   acordaNavButtons.forEach(btn => btn.addEventListener('click', () => setAcordaPanel(btn.dataset.nav)));
 
@@ -1533,6 +1596,55 @@ Volver al sonido 1 = 6"></textarea>
     });
   }
 
+  // Lista de la pestaña "Ensayo": todas las canciones (no solo repertorio,
+  // para poder ensayar cualquiera), con el mismo buscador por título/
+  // artista. Tocar una fila abre el escenario en modo ensayo para esa
+  // canción (vídeo + autoscroll sincronizado). Las que ya tienen vídeo
+  // guardado se marcan con 🎬 para verlo de un vistazo.
+  function renderPracticeList(){
+    practiceListEl.innerHTML = '';
+    const query = practiceSearchEl.value.trim().toLowerCase();
+    const entries = songs
+      .map((song, idx) => ({ song, idx }))
+      .filter(({ song }) => {
+        if(!query) return true;
+        const haystack = `${song.title || ''} ${song.artist || ''}`.toLowerCase();
+        return haystack.includes(query);
+      });
+
+    if(entries.length === 0){
+      practiceEmptyStateEl.classList.remove('hidden');
+      practiceEmptyStateEl.innerHTML = query
+        ? `Ninguna canción coincide con «${escapeHtml(practiceSearchEl.value.trim())}».`
+        : 'Todavía no has añadido ninguna canción.';
+      return;
+    }
+    practiceEmptyStateEl.classList.add('hidden');
+
+    entries.forEach(({ song, idx }) => {
+      const row = document.createElement('div');
+      row.className = 'song-row';
+      const hasVideo = !!extractYoutubeId(song.youtubeUrl);
+      row.innerHTML = `
+        <button class="play-ic" data-act="open" title="Ensayar">▶</button>
+        <div class="swatch" style="background:${song.color || '#1c1c1c'}"></div>
+        <div class="info" data-act="open">
+          <div class="title-wrap">
+            <div class="title">${escapeHtml(song.title || 'Sense títol')}${hasVideo ? ' 🎬' : ''}</div>
+            <div class="artist">${escapeHtml(song.artist || '—')}</div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-icon btn-sm" data-act="edit" title="Editar / añadir vídeo">✎</button>
+        </div>
+      `;
+      row.querySelectorAll('[data-act="open"]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); openStage(idx, { practice: true }); }));
+      row.querySelector('[data-act="edit"]').addEventListener('click', (e) => { e.stopPropagation(); openEditor(idx); });
+      practiceListEl.appendChild(row);
+    });
+  }
+  practiceSearchEl.addEventListener('input', renderPracticeList);
+
   function toggleRepertoire(idx){
     const song = songs[idx];
     song.inRepertoire = isInRepertoire(song) ? false : true;
@@ -1576,6 +1688,7 @@ Volver al sonido 1 = 6"></textarea>
   const fKey = document.getElementById('f-key');
   const fBpm = document.getElementById('f-bpm');
   const fDuration = document.getElementById('f-duration');
+  const fYoutubeUrl = document.getElementById('f-youtube-url');
   const fColorPicker = document.getElementById('f-color-picker');
   const fColorHex = document.getElementById('f-color-hex');
   const fContent = document.getElementById('f-content');
@@ -1607,6 +1720,7 @@ Volver al sonido 1 = 6"></textarea>
     fKey.value = song ? song.key || '' : '';
     fBpm.value = song ? song.bpm || '' : '';
     fDuration.value = song ? song.duration || '' : '';
+    fYoutubeUrl.value = song ? song.youtubeUrl || '' : '';
     const color = song ? (song.color || '#1c1c1c') : '#1c1c1c';
     fColorPicker.value = color;
     fColorHex.value = color;
@@ -2001,6 +2115,7 @@ Volver al sonido 1 = 6"></textarea>
       key: fKey.value.trim(),
       bpm: fBpm.value.trim(),
       duration: fDuration.value.trim(),
+      youtubeUrl: fYoutubeUrl.value.trim(),
       color,
       content: fContent.value,
       abletonPitchOffset: parseInt(fAbletonPitch.value, 10) || 0,
@@ -2030,6 +2145,7 @@ Volver al sonido 1 = 6"></textarea>
     }
     saveSongs();
     renderList();
+    renderPracticeList();
     closeEditor();
     if(!document.getElementById('stage').classList.contains('hidden')){
       renderStageSong();
@@ -2045,6 +2161,7 @@ Volver al sonido 1 = 6"></textarea>
     songs.splice(editingIndex, 1);
     saveSongs();
     renderList();
+    renderPracticeList();
     closeEditor();
   });
 
@@ -2312,6 +2429,9 @@ Volver al sonido 1 = 6"></textarea>
 
   /* ===================== STAGE MODE ===================== */
   const stageEl = document.getElementById('stage');
+  const practiceVideoEl = document.getElementById('practice-video');
+  const pvFrameWrap = document.getElementById('pv-frame-wrap');
+  const pvNoneMsg = document.getElementById('pv-none-msg');
   const stageTitleEl = document.getElementById('stage-title');
   const stageArtistEl = document.getElementById('stage-artist');
   const tagKey = document.getElementById('tag-key');
@@ -2428,7 +2548,7 @@ Volver al sonido 1 = 6"></textarea>
     // mismo punto una vez cambie el alto (la letra ocupa mucho más que solo
     // los acordes, así que las posiciones en píxeles cambian al ocultarla).
     const oldPoints = song ? buildSectionCheckpoints(song) : null;
-    const elapsedBefore = oldPoints ? elapsedForScrollTop(oldPoints, lyricsScroll.scrollTop) : null;
+    const elapsedBefore = oldPoints ? elapsedForScrollTopByLine(oldPoints, lyricsScroll.scrollTop) : null;
     const wasPlaying = autoscrolling;
     if(wasPlaying) stopAutoscroll();
 
@@ -2439,7 +2559,7 @@ Volver al sonido 1 = 6"></textarea>
     if(song){
       const newPoints = buildSectionCheckpoints(song);
       if(newPoints && elapsedBefore !== null){
-        lyricsScroll.scrollTop = scrollTopForElapsed(newPoints, elapsedBefore);
+        lyricsScroll.scrollTop = scrollTopForElapsedByLine(newPoints, elapsedBefore);
       }
       renderSectionsSidebar();
       updateCurrentLineHighlight(newPoints, elapsedBefore !== null ? elapsedBefore : undefined);
@@ -2450,6 +2570,11 @@ Volver al sonido 1 = 6"></textarea>
 
   let currentIndex = 0;
   let currentTranspose = 0;
+  // Modo ensayo: igual que el escenario de directo, pero con el vídeo de
+  // YouTube de la canción (si tiene) al lado de la letra, y arrancando/
+  // parando el vídeo junto con el autoscroll. Se activa al abrir una
+  // canción desde la pestaña "Ensayo" — openStage(idx, {practice:true}).
+  let practiceMode = false;
   let currentScale = 1;
   let wakeLock = null;
 
@@ -2468,13 +2593,80 @@ Volver al sonido 1 = 6"></textarea>
     return list;
   }
 
-  function openStage(startIndex){
+  // Acepta los formatos normales de enlace de YouTube (watch?v=, youtu.be/,
+  // shorts/, embed/ ya hecho) y devuelve el ID del vídeo, o null si no lo
+  // reconoce — así un enlace mal pegado simplemente no enseña vídeo, en vez
+  // de romper la página.
+  function extractYoutubeId(url){
+    if(!url) return null;
+    const s = String(url).trim();
+    const patterns = [
+      /youtu\.be\/([A-Za-z0-9_-]{6,})/,
+      /youtube\.com\/watch\?[^#]*\bv=([A-Za-z0-9_-]{6,})/,
+      /youtube\.com\/shorts\/([A-Za-z0-9_-]{6,})/,
+      /youtube\.com\/embed\/([A-Za-z0-9_-]{6,})/,
+    ];
+    for(const re of patterns){
+      const m = s.match(re);
+      if(m) return m[1];
+    }
+    return null;
+  }
+
+  // Pinta (o esconde) el panel de vídeo de "Ensayo" para la canción actual.
+  // Solo se muestra si estamos en modo ensayo (practiceMode) Y la canción
+  // tiene un vídeo guardado y reconocible — en escenario normal (directo)
+  // este panel ni se monta, para no distraer ni gastar ancho de banda.
+  let pvIframe = null;
+  function updatePracticeVideo(song){
+    pvFrameWrap.innerHTML = '';
+    pvFrameWrap.classList.remove('hidden');
+    pvNoneMsg.classList.add('hidden');
+    pvIframe = null;
+    if(!practiceMode){
+      practiceVideoEl.classList.remove('visible');
+      return;
+    }
+    const videoId = song ? extractYoutubeId(song.youtubeUrl) : null;
+    if(!videoId){
+      practiceVideoEl.classList.add('visible');
+      pvFrameWrap.classList.add('hidden');
+      pvNoneMsg.classList.remove('hidden');
+      return;
+    }
+    practiceVideoEl.classList.add('visible');
+    // enablejsapi=1 nos deja controlar play/pause desde el botón de la app
+    // (ver startAutoscroll/stopAutoscroll) vía postMessage, sin tener que
+    // cargar la librería entera de la API de YouTube.
+    const iframe = document.createElement('iframe');
+    iframe.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&rel=0&playsinline=1`;
+    iframe.title = 'Vídeo de ensayo';
+    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+    iframe.allowFullscreen = true;
+    pvFrameWrap.appendChild(iframe);
+    pvIframe = iframe;
+  }
+
+  // Mejor esfuerzo: el vídeo puede tardar un instante en cargar el player
+  // de YouTube, así que si el primer mensaje llega demasiado pronto no pasa
+  // nada — el botón de play de la app sigue funcionando igual para la
+  // letra, simplemente el vídeo no arranca solo esa vez.
+  function postToYoutube(func){
+    if(!pvIframe || !pvIframe.contentWindow) return;
+    try{
+      pvIframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*');
+    } catch(e){ /* ignorar: el vídeo seguirá controlándose a mano si falla */ }
+  }
+
+  function openStage(startIndex, opts){
     if(songs.length === 0){
       showToast('Añade al menos una canción primero.');
       return;
     }
     currentIndex = (typeof startIndex === 'number' && startIndex >= 0 && startIndex < songs.length) ? startIndex : 0;
     currentTranspose = 0;
+    practiceMode = !!(opts && opts.practice);
+    stageEl.classList.toggle('practice-mode', practiceMode);
     stageEl.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
     renderStageSong();
@@ -2499,6 +2691,8 @@ Volver al sonido 1 = 6"></textarea>
     releaseWakeLock();
     stageEl.classList.add('hidden');
     document.body.style.overflow = '';
+    practiceMode = false;
+    stageEl.classList.remove('practice-mode');
     renderList();
   }
 
@@ -2507,6 +2701,7 @@ Volver al sonido 1 = 6"></textarea>
     if(!song) return;
     stopAutoscroll();
     stopMetronome();
+    updatePracticeVideo(song);
 
     stageTitleEl.textContent = song.title || 'Sense títol';
     stageArtistEl.textContent = song.artist || '—';
@@ -2917,6 +3112,42 @@ Volver al sonido 1 = 6"></textarea>
     return points[points.length - 1].top;
   }
 
+  // Versión de scrollTopForElapsed que, en vez de deslizar la pantalla en
+  // línea recta desde la cabecera de la sección actual hasta la cabecera de
+  // la SIGUIENTE a lo largo de todo el tiempo de la sección (lo que hacía
+  // que, en una parte con muchos acordes, el texto fuera desapareciendo por
+  // arriba mucho antes de que esa parte terminara de verdad), reparte el
+  // scroll solo entre las líneas de la sección ACTUAL: al entrar se ve la
+  // primera línea, y al llegar al final de su tiempo real se ha llegado
+  // como mucho a la ÚLTIMA línea de esa misma sección, nunca más allá. El
+  // salto grande a la sección siguiente pasa de golpe en el instante en que
+  // cambia de parte, en vez de ir "robando" pantalla poco a poco durante
+  // toda la sección anterior.
+  function scrollTopForElapsedByLine(points, elapsedSec){
+    let curPos = -1;
+    for(let i = 0; i < points.length; i++){
+      if(points[i].idx >= 0 && elapsedSec >= points[i].sec - 0.001) curPos = i;
+    }
+    if(curPos < 0) return scrollTopForElapsed(points, elapsedSec);
+    const cur = points[curPos];
+    const next = points[curPos + 1];
+    const sectionBlocks = lyricsContent.querySelectorAll(`.chord-lyric-block[data-section-idx="${cur.idx}"]`);
+    if(!sectionBlocks.length) return scrollTopForElapsed(points, elapsedSec);
+    const maxScroll = Math.max(0, lyricsScroll.scrollHeight - lyricsScroll.clientHeight);
+    if(sectionBlocks.length === 1){
+      return Math.min(maxScroll, topWithinLyricsScroll(sectionBlocks[0]));
+    }
+    const span = next ? Math.max(0.001, next.sec - cur.sec) : 0.001;
+    const frac = next ? Math.min(1, Math.max(0, (elapsedSec - cur.sec) / span)) : 0;
+    const pos = frac * (sectionBlocks.length - 1);
+    const floorIdx = Math.floor(pos);
+    const ceilIdx = Math.min(sectionBlocks.length - 1, floorIdx + 1);
+    const localFrac = pos - floorIdx;
+    const topFloor = topWithinLyricsScroll(sectionBlocks[floorIdx]);
+    const topCeil = topWithinLyricsScroll(sectionBlocks[ceilIdx]);
+    return Math.min(maxScroll, topFloor + (topCeil - topFloor) * localFrac);
+  }
+
   function elapsedForScrollTop(points, top){
     if(top <= points[0].top) return points[0].sec;
     for(let i = 1; i < points.length; i++){
@@ -2928,6 +3159,45 @@ Volver al sonido 1 = 6"></textarea>
       }
     }
     return points[points.length - 1].sec;
+  }
+
+  // Inversa de scrollTopForElapsedByLine: dado un scrollTop ya existente en
+  // pantalla, calcula a qué segundo "real" corresponde según las líneas de
+  // la sección actual (en vez de la cabecera de la siguiente). La usamos al
+  // retomar el cálculo del tiempo transcurrido (p. ej. al salir de "solo
+  // acordes" o al reanudar el autoscroll) para que coincida con la misma
+  // lógica que ya coloca el scroll durante la reproducción — si no, el
+  // tiempo recalculado no cuadraría con lo que se ve y daría un salto.
+  function elapsedForScrollTopByLine(points, top){
+    // Qué sección "es" este scrollTop lo decidimos igual que siempre (por
+    // la posición de su propia cabecera, points[i].top) — así un salto
+    // exacto al principio de una sección (seekToSection) se reconoce como
+    // esa sección y no como la anterior. Dentro de la sección ya identificada,
+    // la posición concreta sí se interpola por sus líneas (como en
+    // scrollTopForElapsedByLine) en vez de por la cabecera siguiente.
+    let curPos = -1;
+    for(let i = 0; i < points.length; i++){
+      if(points[i].idx < 0) continue;
+      if(points[i].top <= top + 0.5) curPos = i;
+    }
+    if(curPos < 0) return elapsedForScrollTop(points, top);
+    const cur = points[curPos];
+    const next = points[curPos + 1];
+    const sectionBlocks = lyricsContent.querySelectorAll(`.chord-lyric-block[data-section-idx="${cur.idx}"]`);
+    if(!sectionBlocks.length) return elapsedForScrollTop(points, top);
+    const span = next ? Math.max(0.001, next.sec - cur.sec) : 0.001;
+    const tops = Array.from(sectionBlocks).map(b => topWithinLyricsScroll(b));
+    if(sectionBlocks.length === 1 || top <= tops[0]) return cur.sec;
+    for(let j = 1; j < tops.length; j++){
+      if(top <= tops[j]){
+        const a = tops[j-1], b = tops[j];
+        const localFrac = (b - a) > 0 ? (top - a) / (b - a) : 1;
+        const pos = (j - 1) + localFrac;
+        const frac = pos / (sectionBlocks.length - 1);
+        return cur.sec + frac * span;
+      }
+    }
+    return cur.sec + span;
   }
 
   // Menú lateral de secciones en el escenario: solo se muestra si la
@@ -3182,12 +3452,13 @@ Volver al sonido 1 = 6"></textarea>
     // Reloj virtual (en ms) usado solo en modo con puntos de control: al
     // (re)arrancar, lo inferimos a partir de dónde esté ya el scroll, así
     // un play tras una pausa o un salto manual continúa desde ahí.
-    let elapsedMs = checkpoints ? elapsedForScrollTop(checkpoints, scrollPos) * 1000 : 0;
+    let elapsedMs = checkpoints ? elapsedForScrollTopByLine(checkpoints, scrollPos) * 1000 : 0;
 
     autoscrolling = true;
     lyricsContent.classList.add('playing');
     lastHighlightCheck = 0;
     updatePlayButton();
+    if(practiceMode) postToYoutube('playVideo');
 
     function step(ts){
       if(!autoscrolling) return;
@@ -3203,7 +3474,7 @@ Volver al sonido 1 = 6"></textarea>
         // entrar a los 0:32). El control de "Velocidad" solo afecta al
         // modo antiguo de scroll a ritmo constante (ver el "else" de abajo).
         elapsedMs += dt;
-        scrollPos = scrollTopForElapsed(checkpoints, elapsedMs / 1000);
+        scrollPos = scrollTopForElapsedByLine(checkpoints, elapsedMs / 1000);
       } else {
         scrollPos += pxPerMs * dt;
       }
@@ -3232,6 +3503,7 @@ Volver al sonido 1 = 6"></textarea>
     lyricsContent.classList.remove('playing');
     clearCurrentLineHighlight();
     updatePlayButton();
+    if(practiceMode) postToYoutube('pauseVideo');
   }
 
   // Al llegar al final de la letra: simplemente paramos. Antes pasaba sola
