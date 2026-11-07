@@ -2613,16 +2613,51 @@ Volver al sonido 1 = 6"></textarea>
     return null;
   }
 
+  // Cargamos la librería oficial de la API de YouTube UNA sola vez (la
+  // primera vez que hace falta) — con solo postMessage a pelo el player no
+  // acepta comandos hasta que ha terminado de arrancar del todo, y mandar
+  // "playVideo" antes de eso se perdía sin más (eso era la causa de que el
+  // vídeo y la letra no arrancaran sincronizados: la letra sí arrancaba,
+  // el vídeo se quedaba quieto hasta que Albert le daba a mano, cada vez en
+  // un punto distinto). Con YT.Player sabemos exactamente cuándo el player
+  // está listo (evento onReady) y los comandos ya no se pierden.
+  let youtubeApiPromise = null;
+  function loadYoutubeApi(){
+    if(youtubeApiPromise) return youtubeApiPromise;
+    youtubeApiPromise = new Promise((resolve) => {
+      if(window.YT && window.YT.Player){ resolve(window.YT); return; }
+      const prevCallback = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if(typeof prevCallback === 'function') prevCallback();
+        resolve(window.YT);
+      };
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(tag);
+    });
+    return youtubeApiPromise;
+  }
+
   // Pinta (o esconde) el panel de vídeo de "Ensayo" para la canción actual.
   // Solo se muestra si estamos en modo ensayo (practiceMode) Y la canción
   // tiene un vídeo guardado y reconocible — en escenario normal (directo)
   // este panel ni se monta, para no distraer ni gastar ancho de banda.
-  let pvIframe = null;
+  let pvPlayer = null;
+  let pvPlayerReady = false;
+  let pvPendingPlay = false; // Albert le dio a play antes de que el vídeo terminara de cargar.
+  let pvGeneration = 0; // para ignorar un onReady que llega tarde, de una canción que ya hemos dejado.
   function updatePracticeVideo(song){
+    pvGeneration++;
+    const myGeneration = pvGeneration;
+    if(pvPlayer && typeof pvPlayer.destroy === 'function'){
+      try{ pvPlayer.destroy(); } catch(e){ /* ignorar */ }
+    }
+    pvPlayer = null;
+    pvPlayerReady = false;
+    pvPendingPlay = false;
     pvFrameWrap.innerHTML = '';
     pvFrameWrap.classList.remove('hidden');
     pvNoneMsg.classList.add('hidden');
-    pvIframe = null;
     if(!practiceMode){
       practiceVideoEl.classList.remove('visible');
       return;
@@ -2635,26 +2670,40 @@ Volver al sonido 1 = 6"></textarea>
       return;
     }
     practiceVideoEl.classList.add('visible');
-    // enablejsapi=1 nos deja controlar play/pause desde el botón de la app
-    // (ver startAutoscroll/stopAutoscroll) vía postMessage, sin tener que
-    // cargar la librería entera de la API de YouTube.
-    const iframe = document.createElement('iframe');
-    iframe.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&rel=0&playsinline=1`;
-    iframe.title = 'Vídeo de ensayo';
-    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
-    iframe.allowFullscreen = true;
-    pvFrameWrap.appendChild(iframe);
-    pvIframe = iframe;
+    const holder = document.createElement('div');
+    pvFrameWrap.appendChild(holder);
+    loadYoutubeApi().then((YT) => {
+      if(myGeneration !== pvGeneration) return; // Albert ya cambió de canción — este player ya no pinta nada.
+      pvPlayer = new YT.Player(holder, {
+        videoId,
+        playerVars: { rel: 0, playsinline: 1 },
+        events: {
+          onReady: () => {
+            if(myGeneration !== pvGeneration) return;
+            pvPlayerReady = true;
+            if(pvPendingPlay){
+              pvPendingPlay = false;
+              postToYoutube('play');
+            }
+          },
+        },
+      });
+    });
   }
 
-  // Mejor esfuerzo: el vídeo puede tardar un instante en cargar el player
-  // de YouTube, así que si el primer mensaje llega demasiado pronto no pasa
-  // nada — el botón de play de la app sigue funcionando igual para la
-  // letra, simplemente el vídeo no arranca solo esa vez.
-  function postToYoutube(func){
-    if(!pvIframe || !pvIframe.contentWindow) return;
+  // play/pause del vídeo de YouTube desde el botón de la app. Si el player
+  // todavía no ha terminado de cargar cuando se pide "play", lo apuntamos en
+  // pvPendingPlay y se dispara solo en cuanto llega onReady — así ya no
+  // depende de que Albert le dé a mano al vídeo en el momento justo.
+  function postToYoutube(action){
+    if(!practiceMode) return;
+    if(!pvPlayer || !pvPlayerReady){
+      if(action === 'play') pvPendingPlay = true;
+      return;
+    }
     try{
-      pvIframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*');
+      if(action === 'play') pvPlayer.playVideo();
+      else if(action === 'pause') pvPlayer.pauseVideo();
     } catch(e){ /* ignorar: el vídeo seguirá controlándose a mano si falla */ }
   }
 
@@ -3458,7 +3507,7 @@ Volver al sonido 1 = 6"></textarea>
     lyricsContent.classList.add('playing');
     lastHighlightCheck = 0;
     updatePlayButton();
-    if(practiceMode) postToYoutube('playVideo');
+    if(practiceMode) postToYoutube('play');
 
     function step(ts){
       if(!autoscrolling) return;
@@ -3487,7 +3536,21 @@ Volver al sonido 1 = 6"></textarea>
         updateCurrentLineHighlight(checkpoints, elapsedMs / 1000);
         if(checkpoints) updateSectionSidebarHighlight(elapsedMs / 1000);
       }
-      if(scrollPos >= lyricsScroll.scrollHeight - lyricsScroll.clientHeight - 2){
+      // Cuándo se da la canción por acabada: con puntos de control, SOLO por
+      // el tiempo real transcurrido frente a la duración de la canción —
+      // nunca por la posición del scroll. Antes se comprobaba si scrollPos
+      // ya había llegado al final del scroll físico, pero eso puede pasar
+      // mucho antes de tiempo: una sección de en medio (no la última) puede
+      // caer, por su propia altura en pantalla, dentro del último tramo
+      // visible del documento — y entonces el autoscroll se paraba del
+      // todo ahí, como le pasaba a "Insurrección" (se cortaba hacia el
+      // minuto 1:20 con una canción de 2:12). Sin puntos de control (modo
+      // antiguo, velocidad constante) seguimos igual que siempre, porque
+      // ahí el scroll y el tiempo son la misma cosa por diseño.
+      const songOver = checkpoints
+        ? (elapsedMs / 1000) >= checkpoints[checkpoints.length - 1].sec - 0.05
+        : scrollPos >= lyricsScroll.scrollHeight - lyricsScroll.clientHeight - 2;
+      if(songOver){
         handleAutoscrollComplete();
         return;
       }
@@ -3503,7 +3566,7 @@ Volver al sonido 1 = 6"></textarea>
     lyricsContent.classList.remove('playing');
     clearCurrentLineHighlight();
     updatePlayButton();
-    if(practiceMode) postToYoutube('pauseVideo');
+    if(practiceMode) postToYoutube('pause');
   }
 
   // Al llegar al final de la letra: simplemente paramos. Antes pasaba sola
