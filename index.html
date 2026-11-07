@@ -225,13 +225,18 @@
      contenido e información, solo tipografías/paddings/tamaños de botón más
      compactos. Si en el iPad algún botón queda difícil de tocar con el dedo
      durante un concierto, se puede subir de nuevo solo ese elemento. */
-  #stage-title{font-size:15px;font-weight:700;margin:0;line-height:1.05;color:var(--header-text);}
+  #stage-title{font-size:20px;font-weight:700;margin:0;line-height:1.05;color:var(--header-text);}
   #stage-artist{font-size:10px;opacity:0.85;margin:0;color:var(--header-text);}
-  .stage-tags{display:flex;gap:5px;margin-top:2px;flex-wrap:wrap;}
+  .stage-tags{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;}
   /* Cápsulas redondeadas tipo "badge" (inspirado en Faristol: Em / 147 bpm /
      4/4 / 3:25 como píldoras independientes) — antes eran chips cuadrados. */
   .stage-tag{background:rgba(0,0,0,0.32);color:#fff;border:1px solid rgba(255,255,255,0.18);
     border-radius:999px;padding:2px 8px;font-size:9px;font-weight:700;letter-spacing:0.01em;}
+  /* A petición de Albert: con el tono/bpm/duración basta en la franja de
+     arriba — el diagnóstico de CS/AT/PT (sonidos de Ableton) se queda
+     calculado igual que siempre (por si hiciera falta mirarlo algún día),
+     solo se deja de mostrar aquí. */
+  #tag-cs{display:none;}
   .icon-row{display:flex;gap:5px;flex:0 0 auto;}
   .icon-btn{background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.14);color:#f2f2f2;
     width:27px;height:27px;border-radius:50%;display:flex;align-items:center;justify-content:center;
@@ -586,6 +591,15 @@
   <div id="editor-panel">
     <h2 id="editor-title">Nueva canción</h2>
 
+    <div class="list-tabs editor-tabs" id="editor-tabs">
+      <button type="button" class="active" data-etab="info">Información</button>
+      <button type="button" data-etab="lyrics">Letra y acordes</button>
+      <button type="button" data-etab="media">Multimedia</button>
+      <button type="button" data-etab="ableton">Ableton</button>
+      <button type="button" data-etab="notes">Notas</button>
+    </div>
+
+    <div class="editor-tab-panel" data-etab-panel="info">
     <div class="row-2">
       <div class="field">
         <label>Título</label>
@@ -658,7 +672,9 @@
          cada canción de cara a los ensayos) y es independiente de la
          estrella/"En repertorio" que ya existía para filtrar el modo
          Concierto — no se tocan ni se mezclan esas dos cosas. -->
+    </div><!-- /panel info -->
 
+    <div class="editor-tab-panel hidden" data-etab-panel="media">
     <div class="field">
       <label for="f-youtube-url">Vídeo de YouTube para ensayar (opcional)</label>
       <input type="text" id="f-youtube-url" placeholder="https://www.youtube.com/watch?v=...">
@@ -690,7 +706,9 @@
       <button type="button" id="btn-add-score" class="btn btn-sm" style="margin-top:6px;">+ Añadir partitura</button>
       <span class="help-text">Enlace a un PDF o imagen (Drive, Dropbox...).</span>
     </div>
+    </div><!-- /panel media -->
 
+    <div class="editor-tab-panel hidden" data-etab-panel="ableton">
     <div class="field" id="f-ableton-field">
       <label for="f-ableton-pitch">Pitch automático en Ableton (semitonos)</label>
       <input type="number" id="f-ableton-pitch" step="1" value="0" placeholder="0">
@@ -771,7 +789,9 @@ Volver al sonido 1 = 6"></textarea>
         letra en pantalla. Déjalo vacío si esta canción usa un solo sonido.
       </span>
     </div>
+    </div><!-- /panel ableton -->
 
+    <div class="editor-tab-panel hidden" data-etab-panel="lyrics">
     <div class="field">
       <label>Letra y acordes</label>
       <div class="section-insert-row">
@@ -831,6 +851,20 @@ Volver al sonido 1 = 6"></textarea>
       <label>Vista previa</label>
       <div class="preview-box" id="editor-preview"></div>
     </div>
+    </div><!-- /panel lyrics -->
+
+    <div class="editor-tab-panel hidden" data-etab-panel="notes">
+    <div class="field">
+      <label for="f-observations">Notas para esta canción</label>
+      <textarea id="f-observations" rows="4" placeholder="Programa de teclado, avisos, lo que haga falta recordar..."></textarea>
+      <span class="help-text">
+        Es el mismo cuadro de "Notas para esta canción" que ya se puede escribir
+        directamente en el escenario en directo — aquí es solo más cómodo para
+        dejarlas preparadas antes del ensayo. Lo que escribas en cualquiera de los
+        dos sitios es lo mismo.
+      </span>
+    </div>
+    </div><!-- /panel notes -->
 
     <div class="editor-actions">
       <button class="btn btn-danger hidden" id="btn-delete-song">Eliminar canción</button>
@@ -1855,12 +1889,30 @@ Volver al sonido 1 = 6"></textarea>
   const scoresListEl = document.getElementById('scores-list');
   const btnAddScore = document.getElementById('btn-add-score');
   const btnSearchLyrics = document.getElementById('btn-search-lyrics');
+  const fObservations = document.getElementById('f-observations');
+  const editorTabsEl = document.getElementById('editor-tabs');
+
+  // Pestañas del editor (Información / Letra y acordes / Multimedia /
+  // Ableton / Notas): es puramente visual — qué bloque de campos se ve en
+  // cada momento. Ningún campo cambia de id ni de lógica de guardado/carga
+  // por estar dentro de una pestaña u otra, así que esto no toca ningún
+  // dato existente, solo cómo se agrupan en pantalla.
+  function switchEditorTab(tab){
+    editorTabsEl.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.etab === tab));
+    document.querySelectorAll('.editor-tab-panel').forEach(p => p.classList.toggle('hidden', p.dataset.etabPanel !== tab));
+  }
+  editorTabsEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-etab]');
+    if(!btn) return;
+    switchEditorTab(btn.dataset.etab);
+  });
 
   let editingIndex = null; // null = nueva canción
 
   function openEditor(idx){
     editingIndex = (typeof idx === 'number') ? idx : null;
     const song = editingIndex !== null ? songs[editingIndex] : null;
+    switchEditorTab('info'); // siempre se abre por la primera pestaña
 
     editorTitle.textContent = song ? 'Editar canción' : 'Nueva canción';
     fTitle.value = song ? song.title || '' : '';
@@ -1909,6 +1961,7 @@ Volver al sonido 1 = 6"></textarea>
     }
     fTags.value = (song && Array.isArray(song.tags)) ? song.tags.join(', ') : '';
     fRefAudioUrl.value = song ? (song.referenceAudioUrl || '') : '';
+    fObservations.value = song ? (song.observations || '') : '';
     editorTutorials = (song && Array.isArray(song.tutorials))
       ? song.tutorials.map(t => ({ label: t.label || '', url: t.url || '' }))
       : [];
@@ -2461,6 +2514,7 @@ Volver al sonido 1 = 6"></textarea>
       style: fStyle.value === '__other__' ? fStyleOther.value.trim() : fStyle.value,
       tags: fTags.value.split(',').map(t => t.trim()).filter(Boolean),
       referenceAudioUrl: fRefAudioUrl.value.trim(),
+      observations: fObservations.value,
       tutorials: editorTutorials
         .map(t => ({ label: (t.label || '').trim(), url: (t.url || '').trim() }))
         .filter(t => t.url),
