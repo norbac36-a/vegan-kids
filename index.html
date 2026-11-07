@@ -151,11 +151,24 @@
     padding:6px 13px;border-radius:999px;letter-spacing:0.01em;}
   .live-trigger-btn:active{background:var(--accent);color:var(--accent-text);border-color:var(--accent);}
 
-  #obs-box{margin:10px 16px 0;background:#c0271d;border:none;border-radius:8px;padding:9px 12px;font-size:12px;}
-  #obs-box .obs-label{color:#ffffff;font-weight:700;font-size:10px;letter-spacing:0.05em;margin-bottom:4px;opacity:0.85;}
-  #obs-box textarea{width:100%;background:none;border:none;color:#ffffff;resize:none;font-size:19px;font-weight:700;line-height:1.25;padding:0;min-height:26px;}
-  #obs-box textarea::placeholder{color:rgba(255,255,255,0.7);}
+  /* Ahora que el transporte y los sonidos van automáticos, la mayoría de
+     canciones no necesitan ningún aviso — por defecto el cuadro de
+     observaciones se queda pequeño y discreto (una franja fina, sin apenas
+     texto) para no robar espacio a la letra. En cuanto una canción SÍ tiene
+     texto guardado (o se está escribiendo uno), recupera el aviso rojo bien
+     visible de siempre — así sigue estando disponible para el tema concreto
+     que lo necesite, solo que ya no ocupa sitio en los demás. */
+  #obs-box{margin:8px 16px 0;background:var(--panel-2);border:1px dashed var(--border);
+    border-radius:8px;padding:4px 10px;font-size:12px;transition:background 0.15s,padding 0.15s,border-color 0.15s;}
+  #obs-box .obs-label{color:#ffffff;font-weight:700;font-size:10px;letter-spacing:0.05em;margin-bottom:4px;opacity:0.85;display:none;}
+  #obs-box textarea{width:100%;background:none;border:none;color:var(--text-dim);resize:none;
+    font-size:13px;font-weight:600;line-height:1.25;padding:0;min-height:18px;}
+  #obs-box textarea::placeholder{color:var(--text-dim);}
   #obs-box textarea:focus{outline:none;}
+  #obs-box.has-text{background:#c0271d;border:none;padding:9px 12px;}
+  #obs-box.has-text .obs-label{display:block;}
+  #obs-box.has-text textarea{color:#ffffff;font-size:19px;font-weight:700;min-height:26px;}
+  #obs-box.has-text textarea::placeholder{color:rgba(255,255,255,0.7);}
 
   #stage-body{flex:1;display:flex;min-height:0;overflow:hidden;}
   #lyrics-scroll{flex:1;min-width:0;overflow-y:auto;overflow-x:auto;padding:22px 16px 90px;}
@@ -163,10 +176,11 @@
     background:var(--panel);padding:10px 8px 90px;display:none;}
   #sections-sidebar.visible{display:block;}
   .section-nav-item{display:block;width:100%;text-align:left;background:var(--panel-2);
-    border:1px solid var(--border);border-radius:8px;padding:7px 9px;margin-bottom:6px;
-    font-size:12px;line-height:1.3;color:var(--text);}
+    border:1px solid var(--border);border-left:4px solid var(--sec-color, var(--border));border-radius:8px;
+    padding:7px 9px;margin-bottom:6px;font-size:12px;line-height:1.3;color:var(--text);}
   .section-nav-item .nav-time{display:block;font-size:10px;color:var(--text-dim);margin-top:2px;}
-  .section-nav-item.current{background:var(--accent);color:var(--accent-text);border-color:var(--accent);font-weight:700;}
+  .section-nav-item.current{background:var(--accent);color:var(--accent-text);border-color:var(--accent);
+    border-left-color:var(--sec-color, var(--accent));font-weight:700;}
   .section-nav-item.current .nav-time{color:var(--accent-text);opacity:0.85;}
   /* width:max-content (sin min-width:100%) hace que el bloque se ajuste al
      ancho de su línea más larga, y margin:0 auto lo centra en la pantalla.
@@ -175,9 +189,9 @@
      nada y el texto quedaba pegado a la izquierda. */
   #lyrics-content{width:max-content;max-width:none;margin:0 auto;padding:0 16px;
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
-    font-size:calc(16px * var(--scale, 1));line-height:1.35;box-sizing:border-box;}
+    font-size:calc(16px * var(--scale, 1) * var(--fit-scale, 1));line-height:1.35;box-sizing:border-box;}
   .section-title{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    font-weight:700;font-size:calc(17px * var(--scale,1));margin:24px 0 6px;}
+    font-weight:700;font-size:calc(17px * var(--scale,1) * var(--fit-scale, 1));margin:14px 0 4px;padding-left:10px;}
   .section-title:first-child{margin-top:0;}
   .chord-lyric-block{margin-bottom:2px;}
   .chord-line{color:var(--chord);font-weight:700;white-space:pre;transition:font-size 0.2s ease;}
@@ -286,7 +300,7 @@
   @media (max-width:520px){
     .row-3{grid-template-columns:1fr 1fr;}
     #stage-title{font-size:20px;}
-    #obs-box textarea{font-size:18px;}
+    #obs-box.has-text textarea{font-size:18px;}
   }
 </style>
 </head>
@@ -958,6 +972,26 @@ Volver al sonido 1 = 6"></textarea>
     }[c]));
   }
 
+  // Color por TIPO de sección (Intro, Estrofa, Tornada...), igual criterio
+  // que usamos para re-nombrar las secciones del repertorio: mismo color
+  // tanto en la barra lateral como junto a cada título dentro de la letra,
+  // para que de un vistazo se vea qué tipo de parte viene sin leer el texto.
+  const SECTION_COLOR_RULES = [
+    [/^(intro|instrumental)/, '#4a90e2'],   // azul
+    [/^(estrofa|verse|verso)/, '#3daa6b'],  // verde
+    [/^pre[-\s]?tornada/, '#2bb3a3'],       // turquesa
+    [/^(tornada|chorus|estribillo)/, '#e0963a'], // naranja/dorado
+    [/^(pont|bridge|puente|solo|canvi|cambio)/, '#d9534f'], // rojo
+    [/^(aturada|final|outro)/, '#9b6fd1'],  // morado
+  ];
+  function sectionColor(title){
+    const t = (title || '').trim().toLowerCase();
+    for(const [re, color] of SECTION_COLOR_RULES){
+      if(re.test(t)) return color;
+    }
+    return 'var(--border)';
+  }
+
   // Coloca cada acorde en la columna que le corresponde según el texto que le
   // precede, pero si dos acordes quedarían pegados o solapados (p.ej. una
   // tirada de acordes con poco o ningún texto entre medio), empuja el
@@ -1147,7 +1181,7 @@ Volver al sonido 1 = 6"></textarea>
       if(line.type === 'header'){
         sectionIdx++;
         const isDup = canonicalOf[sectionIdx] !== sectionIdx;
-        html += `<div class="section-title${isDup ? ' chords-duplicate' : ''}">${escapeHtml(line.text)}</div>`;
+        html += `<div class="section-title${isDup ? ' chords-duplicate' : ''}" style="border-left:4px solid ${sectionColor(line.text)}">${escapeHtml(line.text)}</div>`;
         html += `<div class="section-chords-summary${isDup ? ' chords-duplicate' : ''}" data-section-idx="${sectionIdx}" data-canonical-idx="${canonicalOf[sectionIdx]}">${escapeHtml(displaySummaries[sectionIdx] || '')}</div>`;
       } else if(line.type === 'blank'){
         html += `<div class="blank-line"></div>`;
@@ -1162,8 +1196,13 @@ Volver al sonido 1 = 6"></textarea>
             : chordLine;
           html += `<div class="chord-line">${escapeHtml(chordLineOut)}</div>`;
         }
-        if(!isRepeatMarker){
-          html += `<div class="lyric-line-text">${escapeHtml(lyricLine) || '&nbsp;'}</div>`;
+        // Si la línea es solo acordes (sin ninguna palabra de letra debajo,
+        // típico de intros/riffs instrumentales como "[B] [C#m] [G#m] [E]"),
+        // no pintamos una fila de letra vacía debajo — antes se metía un
+        // "&nbsp;" que ocupaba una línea entera de alto sin mostrar nada,
+        // separando mucho los acordes entre sí y de la siguiente sección.
+        if(!isRepeatMarker && trimmedLyric){
+          html += `<div class="lyric-line-text">${escapeHtml(lyricLine)}</div>`;
         }
         html += `</div>`;
       }
@@ -1381,6 +1420,16 @@ Volver al sonido 1 = 6"></textarea>
     const m = Math.floor(s / 60);
     const rem = (s - m * 60);
     return `${m}:${rem.toFixed(1).padStart(4,'0')}`;
+  }
+
+  // Versión sin decimales, para el lateral de secciones en el escenario
+  // (0:24 en vez de 0:24.0) — ahí no hace falta la precisión de décimas que
+  // sí usa el editor al grabar tiempos a mano.
+  function formatMMSSClean(totalSec){
+    const s = Math.max(0, Math.round(totalSec));
+    const m = Math.floor(s / 60);
+    const rem = s - m * 60;
+    return `${m}:${String(rem).padStart(2,'0')}`;
   }
 
   function parseMMSS(str){
@@ -2017,6 +2066,7 @@ Volver al sonido 1 = 6"></textarea>
   const lyricsContent = document.getElementById('lyrics-content');
   const lyricsScroll = document.getElementById('lyrics-scroll');
   const obsText = document.getElementById('obs-text');
+  const obsBox = document.getElementById('obs-box');
   const fontPct = document.getElementById('font-pct');
   const playBtn = document.getElementById('play-btn');
   const metronomeBtn = document.getElementById('metronome-btn');
@@ -2209,6 +2259,7 @@ Volver al sonido 1 = 6"></textarea>
 
     obsText.value = song.observations || '';
     autoResizeObs();
+    updateObsBoxState();
 
     renderLiveTriggers(song);
 
@@ -2246,6 +2297,7 @@ Volver al sonido 1 = 6"></textarea>
     transposeValueEl.textContent = `${currentTranspose >= 0 ? '+' : ''}${currentTranspose} · ${shownKey}`;
     const parsed = parseContent((song && song.content) || '');
     lyricsContent.innerHTML = renderParsedContent(parsed, currentTranspose, preferFlats);
+    updateContentFit();
   }
 
   document.getElementById('btn-prev-song').addEventListener('click', () => {
@@ -2399,13 +2451,24 @@ Volver al sonido 1 = 6"></textarea>
     }
   });
 
-  // Observaciones: autosave al perder el foco
-  obsText.addEventListener('input', autoResizeObs);
+  // Observaciones: autosave al perder el foco. El cuadro se queda discreto
+  // y pequeño por defecto (ver CSS de #obs-box) y solo recupera el aviso
+  // rojo grande cuando hay texto guardado o se está escribiendo uno —
+  // así sigue disponible para el tema concreto que lo necesite sin robar
+  // espacio al resto.
+  function updateObsBoxState(expanded){
+    const hasText = !!(obsText.value && obsText.value.trim());
+    obsBox.classList.toggle('has-text', hasText || !!expanded);
+  }
+  obsText.addEventListener('input', () => { autoResizeObs(); updateObsBoxState(); });
+  obsText.addEventListener('focus', () => updateObsBoxState(true));
   obsText.addEventListener('blur', () => {
     const song = songs[currentIndex];
-    if(!song) return;
-    song.observations = obsText.value;
-    saveSongs();
+    if(song){
+      song.observations = obsText.value;
+      saveSongs();
+    }
+    updateObsBoxState();
   });
   function autoResizeObs(){
     obsText.style.height = 'auto';
@@ -2426,7 +2489,32 @@ Volver al sonido 1 = 6"></textarea>
   function applyScale(){
     lyricsContent.style.setProperty('--scale', currentScale);
     fontPct.textContent = Math.round(currentScale * 100) + '%';
+    updateContentFit();
   }
+
+  // Letra y acordes SIEMPRE dentro del margen de la pantalla: si con el
+  // tamaño elegido (--scale) la línea más ancha (acordes alineados sobre la
+  // letra, en monoespaciada) no cabe en el ancho disponible, encogemos un
+  // poco más con --fit-scale hasta que quepa, en vez de dejar que el
+  // escenario tenga que desplazarse en horizontal para verla entera. Por
+  // eso se recalcula cada vez que cambia el tamaño de letra, la canción, el
+  // lateral de secciones (cambia el ancho disponible) o el tamaño de la
+  // ventana/tablet.
+  function updateContentFit(){
+    if(!lyricsContent || !lyricsScroll) return;
+    lyricsContent.style.setProperty('--fit-scale', 1);
+    const available = lyricsScroll.clientWidth - 32; // padding izq+dcha de #lyrics-scroll
+    const natural = lyricsContent.scrollWidth;
+    if(available > 0 && natural > available){
+      const ratio = Math.max(0.4, (available / natural) * 0.98);
+      lyricsContent.style.setProperty('--fit-scale', ratio.toFixed(3));
+    }
+  }
+  let fitResizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(fitResizeTimer);
+    fitResizeTimer = setTimeout(updateContentFit, 120);
+  });
   // Se guarda por canción (cada una puede necesitar un tamaño distinto).
   function saveFontScale(){
     const song = songs[currentIndex];
@@ -2571,6 +2659,7 @@ Volver al sonido 1 = 6"></textarea>
     if(!namedPoints.length){
       sectionsSidebar.classList.remove('visible');
       sectionsSidebar.innerHTML = '';
+      updateContentFit();
       return;
     }
     sectionsSidebar.classList.add('visible');
@@ -2583,8 +2672,18 @@ Volver al sonido 1 = 6"></textarea>
     sectionsSidebar.innerHTML = namedPoints.map(p => {
       seen[p.title] = (seen[p.title] || 0) + 1;
       const label = totals[p.title] > 1 ? `${p.title} (${seen[p.title]}/${totals[p.title]})` : p.title;
-      return `<button type="button" class="section-nav-item" data-idx="${p.idx}">${escapeHtml(label)}<span class="nav-time">${formatMMSS(p.sec)}</span></button>`;
+      // El tiempo de fin de esta sección es el de su punto siguiente dentro
+      // de TODOS los puntos (no solo los que tienen título) — así la última
+      // sección con nombre acaba en la duración real de la canción, que es
+      // justo el punto final sintético que añade buildSectionCheckpoints.
+      const fullIdx = points.indexOf(p);
+      const endSec = (fullIdx >= 0 && points[fullIdx + 1]) ? points[fullIdx + 1].sec : null;
+      const timeLabel = endSec != null ? `${formatMMSSClean(p.sec)}–${formatMMSSClean(endSec)}` : formatMMSSClean(p.sec);
+      const color = sectionColor(p.title);
+      return `<button type="button" class="section-nav-item" data-idx="${p.idx}" style="--sec-color:${color}">${escapeHtml(label)}<span class="nav-time">${timeLabel}</span></button>`;
     }).join('');
+    // Mostrar/ocultar el lateral cambia el ancho disponible para la letra.
+    updateContentFit();
   }
 
   sectionsSidebar.addEventListener('click', (e) => {
