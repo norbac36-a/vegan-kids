@@ -1008,6 +1008,10 @@ Volver al sonido 1 = 6"></textarea>
       <label for="ableton-offset">Desfase de escena (déjalo en 0 salvo que haga falta)</label>
       <input type="number" id="ableton-offset" step="1" value="0">
     </div>
+    <div class="field">
+      <label for="ableton-track-offset">Desfase de pista (para "Pistas activas"/"Pistas preparadas" — déjalo en 0 salvo que haga falta)</label>
+      <input type="number" id="ableton-track-offset" step="1" value="0">
+    </div>
     <p id="ableton-status"></p>
     <div class="editor-actions" style="margin:14px 0 0;position:static;background:none;border-top:none;padding:0;">
       <div style="display:flex;gap:8px;">
@@ -2599,10 +2603,14 @@ Volver al sonido 1 = 6"></textarea>
   function loadAbletonConfig(){
     try{
       const raw = safeStorage.getItem(ABLETON_CONFIG_KEY);
-      if(!raw) return { url: '', offset: 0 };
+      if(!raw) return { url: '', offset: 0, trackOffset: 0 };
       const parsed = JSON.parse(raw);
-      return { url: parsed.url || '', offset: Number(parsed.offset) || 0 };
-    }catch(e){ return { url: '', offset: 0 }; }
+      return {
+        url: parsed.url || '',
+        offset: Number(parsed.offset) || 0,
+        trackOffset: Number(parsed.trackOffset) || 0,
+      };
+    }catch(e){ return { url: '', offset: 0, trackOffset: 0 }; }
   }
   function saveAbletonConfig(cfg){
     safeStorage.setItem(ABLETON_CONFIG_KEY, JSON.stringify(cfg));
@@ -2619,15 +2627,32 @@ Volver al sonido 1 = 6"></textarea>
   }
 
   // Aviso "best effort": nunca debe tardar mucho ni romper nada si falla.
+  // El "Desfase de escena" (abletonConfig.offset) se suma AQUÍ, solo a la
+  // escena automática de cambio de canción — así se puede reservar un bloque
+  // de escenas fijo en Ableton (p.ej. al principio de todo, antes de la
+  // primera canción) para sonidos sueltos, sin que la posición de cada
+  // canción en la base de datos tenga que coincidir número a número con su
+  // fila real en Ableton. "Escenas extra al cargar" y "Cambios de sonido en
+  // directo" NO llevan desfase a propósito (ver notifyMidSceneChange): esos
+  // números se escriben a mano tal cual se ven en Ableton.
+  // El "Desfase de pista" (abletonConfig.trackOffset) funciona igual pero
+  // para números de PISTA: se suma a "Pistas activas", "Pistas preparadas"
+  // y al número de pista de "Sonidos de los racks" — así, si algún día se
+  // añaden pistas nuevas al principio de la sesión de Ableton (como las 3
+  // de los samplers), no hay que ir canción por canción corrigiendo a mano
+  // los números guardados de cada una.
   function notifyAbleton(sceneIndex, transpose, chainSelectors, activeTracks, preparedTracks){
     if(!abletonConfig.url) return;
     const url = abletonConfig.url.replace(/\/+$/, '') + '/song-change';
     const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), 1500) : null;
-    const body = { scene: sceneIndex, transpose: transpose };
-    if(Array.isArray(chainSelectors) && chainSelectors.length) body.chainSelectors = chainSelectors;
-    if(Array.isArray(activeTracks)) body.activeTracks = activeTracks;
-    if(Array.isArray(preparedTracks)) body.preparedTracks = preparedTracks;
+    const trackOffset = abletonConfig.trackOffset || 0;
+    const body = { scene: sceneIndex + abletonConfig.offset, transpose: transpose };
+    if(Array.isArray(chainSelectors) && chainSelectors.length){
+      body.chainSelectors = chainSelectors.map(c => ({ track: c.track + trackOffset, value: c.value }));
+    }
+    if(Array.isArray(activeTracks)) body.activeTracks = activeTracks.map(n => n + trackOffset);
+    if(Array.isArray(preparedTracks)) body.preparedTracks = preparedTracks.map(n => n + trackOffset);
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2637,9 +2662,11 @@ Volver al sonido 1 = 6"></textarea>
       .finally(() => { if(timer) clearTimeout(timer); });
   }
 
-  // Botones de "cambio de sonido en directo" (song.liveTriggers): igual de
-  // "best effort" que notifyAbleton, pero sin tocar la canción cargada ni el
-  // Pitch — solo dispara la escena que le digas, tal cual, en el ayudante.
+  // Botones de "cambio de sonido en directo" (song.liveTriggers) y las
+  // "Escenas extra al cargar" (song.extraLoadScenes): igual de "best effort"
+  // que notifyAbleton, pero sin tocar la canción cargada ni el Pitch — solo
+  // dispara la escena que le digas, TAL CUAL, sin sumarle abletonConfig.offset
+  // (a propósito: esos números se escriben a mano mirando Ableton).
   function notifyMidSceneChange(scene){
     if(!abletonConfig.url) return;
     const url = abletonConfig.url.replace(/\/+$/, '') + '/mid-scene-change';
@@ -2678,11 +2705,13 @@ Volver al sonido 1 = 6"></textarea>
   const abletonOverlay = document.getElementById('ableton-overlay');
   const abletonUrlInput = document.getElementById('ableton-url');
   const abletonOffsetInput = document.getElementById('ableton-offset');
+  const abletonTrackOffsetInput = document.getElementById('ableton-track-offset');
   const abletonStatus = document.getElementById('ableton-status');
 
   function openAbletonSettings(){
     abletonUrlInput.value = abletonConfig.url;
     abletonOffsetInput.value = abletonConfig.offset;
+    abletonTrackOffsetInput.value = abletonConfig.trackOffset;
     abletonStatus.textContent = '';
     abletonStatus.className = '';
     abletonOverlay.classList.remove('hidden');
@@ -2696,6 +2725,7 @@ Volver al sonido 1 = 6"></textarea>
     abletonConfig = {
       url: abletonUrlInput.value.trim(),
       offset: parseInt(abletonOffsetInput.value, 10) || 0,
+      trackOffset: parseInt(abletonTrackOffsetInput.value, 10) || 0,
     };
     saveAbletonConfig(abletonConfig);
     showToast('Ajustes de Ableton guardados.');
