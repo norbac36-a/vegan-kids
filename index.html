@@ -719,6 +719,22 @@
       </span>
     </div>
 
+    <div class="field" id="f-piano-model-field">
+      <label for="f-piano-model">Piano (modelo automático, opcional)</label>
+      <select id="f-piano-model">
+        <option value="">— (no tocar, dejar como estaba)</option>
+        <option value="0">Yamaha C7</option>
+        <option value="1">Steinway D</option>
+        <option value="2">Bechstein Upright</option>
+        <option value="3">Workstation</option>
+      </select>
+      <span class="help-text">
+        Para el piano compartido (Stage Piano): qué modelo usar automáticamente al cargar
+        esta canción. Si lo dejas en "no tocar", se queda el que estuviera sonando en la
+        canción anterior.
+      </span>
+    </div>
+
     <div class="field" id="f-chain-selectors-field">
       <label for="f-chain-selectors">Sonidos de los racks (opcional)</label>
       <textarea id="f-chain-selectors" rows="2" placeholder="4 = 90
@@ -1869,6 +1885,7 @@ Volver al sonido 1 = 6"></textarea>
   const fSectionType = document.getElementById('f-section-type');
   const btnInsertSection = document.getElementById('btn-insert-section');
   const fAbletonPitch = document.getElementById('f-ableton-pitch');
+  const fPianoModel = document.getElementById('f-piano-model');
   const fExtraScenes = document.getElementById('f-extra-scenes');
   const fLiveTriggers = document.getElementById('f-live-triggers');
   const fChainSelectors = document.getElementById('f-chain-selectors');
@@ -1930,6 +1947,7 @@ Volver al sonido 1 = 6"></textarea>
     fColorHex.value = color;
     fContent.value = song ? song.content || '' : DEFAULT_CONTENT;
     fAbletonPitch.value = (song && song.abletonPitchOffset) ? song.abletonPitchOffset : 0;
+    fPianoModel.value = (song && song.pianoModel !== undefined && song.pianoModel !== null) ? String(song.pianoModel) : '';
     fExtraScenes.value = (song && Array.isArray(song.extraLoadScenes))
       ? song.extraLoadScenes.join('\n')
       : '';
@@ -2528,6 +2546,7 @@ Volver al sonido 1 = 6"></textarea>
       color,
       content: fContent.value,
       abletonPitchOffset: parseInt(fAbletonPitch.value, 10) || 0,
+      pianoModel: fPianoModel.value === '' ? null : parseInt(fPianoModel.value, 10),
       extraLoadScenes: parseExtraScenes(fExtraScenes.value),
       liveTriggers: parseLiveTriggers(fLiveTriggers.value),
       chainSelectors: parseChainSelectors(fChainSelectors.value),
@@ -2641,7 +2660,7 @@ Volver al sonido 1 = 6"></textarea>
   // añaden pistas nuevas al principio de la sesión de Ableton (como las 3
   // de los samplers), no hay que ir canción por canción corrigiendo a mano
   // los números guardados de cada una.
-  function notifyAbleton(sceneIndex, transpose, chainSelectors, activeTracks, preparedTracks){
+  function notifyAbleton(sceneIndex, transpose, chainSelectors, activeTracks, preparedTracks, pianoModel){
     if(!abletonConfig.url) return;
     const url = abletonConfig.url.replace(/\/+$/, '') + '/song-change';
     const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -2653,6 +2672,11 @@ Volver al sonido 1 = 6"></textarea>
     }
     if(Array.isArray(activeTracks)) body.activeTracks = activeTracks.map(n => n + trackOffset);
     if(Array.isArray(preparedTracks)) body.preparedTracks = preparedTracks.map(n => n + trackOffset);
+    // "Piano (modelo automático)" (song.pianoModel): a diferencia del Pitch,
+    // es OPCIONAL de verdad — si la canción no tiene nada puesto (null), no
+    // se manda nada y el piano se queda como estuviera de la canción
+    // anterior. Solo se manda cuando hay un valor explícito (0, 1, 2 o 3).
+    if(pianoModel !== undefined && pianoModel !== null) body.pianoModel = pianoModel;
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3337,7 +3361,7 @@ Volver al sonido 1 = 6"></textarea>
     // Aviso opcional al ayudante de Ableton (si está configurado): esta
     // canción y este transporte. No hace nada si no hay URL guardada, y si
     // falla no afecta al resto de la app (ver notifyAbleton).
-    notifyAbleton(currentIndex, abletonPitchFor(song), song.chainSelectors, song.activeTracks, song.preparedTracks);
+    notifyAbleton(currentIndex, abletonPitchFor(song), song.chainSelectors, song.activeTracks, song.preparedTracks, song.pianoModel);
     // Algunas canciones necesitan encender DOS sonidos a la vez porque esas
     // pistas no comparten fila de escena en Ableton (song.extraLoadScenes).
     // Se disparan igual que un botón de "cambio de sonido en directo", pero
