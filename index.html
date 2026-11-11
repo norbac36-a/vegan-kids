@@ -761,6 +761,23 @@
       </span>
     </div>
 
+    <div class="field" id="f-prophet-preset-field">
+      <label for="f-prophet-preset">Prophet V3 (preset automático, opcional)</label>
+      <select id="f-prophet-preset">
+        <option value="">— (no tocar, dejar como estaba)</option>
+        <option value="1">1 · Poly-Prophet</option>
+        <option value="2">2 · Prophet Strings</option>
+        <option value="3">3 · Prophet Pad 1</option>
+        <option value="4">4 · Prophet Strings 2</option>
+        <option value="5">5 · Bright Squares</option>
+        <option value="6">6 · BR Strings Material</option>
+      </select>
+      <span class="help-text">
+        Qué cadena del rack del Prophet V3 se activa al cargar esta canción.
+        Si lo dejas en "no tocar", se queda la de la canción anterior.
+      </span>
+    </div>
+
     <div class="field" id="f-chain-selectors-field">
       <label for="f-chain-selectors">Sonidos de los racks (opcional)</label>
       <textarea id="f-chain-selectors" rows="2" placeholder="4 = 90
@@ -1914,6 +1931,7 @@ Volver al sonido 1 = 6"></textarea>
   const fPianoModel = document.getElementById('f-piano-model');
   const fHammondPreset = document.getElementById('f-hammond-preset');
   const fHammondKeyboard = document.getElementById('f-hammond-keyboard');
+  const fProphetPreset = document.getElementById('f-prophet-preset');
   const fExtraScenes = document.getElementById('f-extra-scenes');
   const fLiveTriggers = document.getElementById('f-live-triggers');
   const fChainSelectors = document.getElementById('f-chain-selectors');
@@ -1978,6 +1996,7 @@ Volver al sonido 1 = 6"></textarea>
     fPianoModel.value = (song && song.pianoModel !== undefined && song.pianoModel !== null) ? String(song.pianoModel) : '';
     fHammondPreset.value = (song && song.hammondPreset !== undefined && song.hammondPreset !== null) ? String(song.hammondPreset) : '';
     fHammondKeyboard.value = (song && typeof song.hammondKeyboard === 'string') ? song.hammondKeyboard : '';
+    fProphetPreset.value = (song && song.prophetPreset !== undefined && song.prophetPreset !== null) ? String(song.prophetPreset) : '';
     fExtraScenes.value = (song && Array.isArray(song.extraLoadScenes))
       ? song.extraLoadScenes.join('\n')
       : '';
@@ -2579,6 +2598,7 @@ Volver al sonido 1 = 6"></textarea>
       pianoModel: fPianoModel.value === '' ? null : parseInt(fPianoModel.value, 10),
       hammondPreset: fHammondPreset.value === '' ? null : parseInt(fHammondPreset.value, 10),
       hammondKeyboard: fHammondKeyboard.value === '' ? null : fHammondKeyboard.value,
+      prophetPreset: fProphetPreset.value === '' ? null : parseInt(fProphetPreset.value, 10),
       extraLoadScenes: parseExtraScenes(fExtraScenes.value),
       liveTriggers: parseLiveTriggers(fLiveTriggers.value),
       chainSelectors: parseChainSelectors(fChainSelectors.value),
@@ -2692,7 +2712,7 @@ Volver al sonido 1 = 6"></textarea>
   // añaden pistas nuevas al principio de la sesión de Ableton (como las 3
   // de los samplers), no hay que ir canción por canción corrigiendo a mano
   // los números guardados de cada una.
-  function notifyAbleton(sceneIndex, transpose, chainSelectors, activeTracks, preparedTracks, pianoModel, hammondPreset, hammondKeyboard){
+  function notifyAbleton(sceneIndex, transpose, chainSelectors, activeTracks, preparedTracks, pianoModel, hammondPreset, hammondKeyboard, prophetPreset){
     if(!abletonConfig.url) return;
     const url = abletonConfig.url.replace(/\/+$/, '') + '/song-change';
     const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -2714,6 +2734,7 @@ Volver al sonido 1 = 6"></textarea>
     // valor explícito; con null/vacío no se manda nada ("no tocar").
     if(hammondPreset !== undefined && hammondPreset !== null) body.hammondPreset = hammondPreset;
     if(typeof hammondKeyboard === 'string' && hammondKeyboard) body.hammondKeyboard = hammondKeyboard;
+    if(prophetPreset !== undefined && prophetPreset !== null) body.prophetPreset = prophetPreset;
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3398,7 +3419,7 @@ Volver al sonido 1 = 6"></textarea>
     // Aviso opcional al ayudante de Ableton (si está configurado): esta
     // canción y este transporte. No hace nada si no hay URL guardada, y si
     // falla no afecta al resto de la app (ver notifyAbleton).
-    notifyAbleton(currentIndex, abletonPitchFor(song), song.chainSelectors, song.activeTracks, song.preparedTracks, song.pianoModel, song.hammondPreset, song.hammondKeyboard);
+    notifyAbleton(currentIndex, abletonPitchFor(song), song.chainSelectors, song.activeTracks, song.preparedTracks, song.pianoModel, song.hammondPreset, song.hammondKeyboard, song.prophetPreset);
     // Algunas canciones necesitan encender DOS sonidos a la vez porque esas
     // pistas no comparten fila de escena en Ableton (song.extraLoadScenes).
     // Se disparan igual que un botón de "cambio de sonido en directo", pero
